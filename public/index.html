@@ -28,7 +28,7 @@
                     <code id="nodeId">-</code>
                 </div>
                 <div class="status-item">
-                    <span class="label"> Notas:</span>
+                    <span class="label">📝 Notas:</span>
                     <strong id="noteCount">0</strong>
                 </div>
             </div>
@@ -94,6 +94,11 @@
         </footer>
     </div>
 
+    <!-- Botón ver Peers -->
+    <button class="peers-fab" onclick="app.showPeersPanel()" title="Ver Peers Conectados" aria-label="Ver Peers">
+        👥
+    </button>
+
     <!-- Panel de Estrategias -->
     <button class="strategy-fab" onclick="app.showStrategyPanel()" title="Configurar Estrategias" aria-label="Configurar Estrategias">
         ⚙️
@@ -103,6 +108,42 @@
     <button class="test-fab" onclick="app.showTestPanel()" title="Ejecutar Pruebas" aria-label="Ejecutar Pruebas">
         🧪
     </button>
+
+    <!-- Contenedor de Notificaciones Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Panel de Peers Conectados -->
+    <div class="peers-panel" id="peersPanel" style="display: none;">
+        <div class="peers-content">
+            <div class="peers-header">
+                <h3>👥 Peers Conectados</h3>
+                <button class="btn-close-panel" onclick="app.showPeersPanel()">✕</button>
+            </div>
+            <div class="peers-body">
+                <div class="peers-stats">
+                    <div class="peer-stat-item">
+                        <span class="stat-label">Total Peers:</span>
+                        <span class="stat-value" id="totalPeers">0</span>
+                    </div>
+                    <div class="peer-stat-item">
+                        <span class="stat-label">Conectados:</span>
+                        <span class="stat-value connected" id="connectedPeers">0</span>
+                    </div>
+                    <div class="peer-stat-item">
+                        <span class="stat-label">Desconectados:</span>
+                        <span class="stat-value disconnected" id="disconnectedPeers">0</span>
+                    </div>
+                </div>
+                <div id="peersListContainer" class="peers-list-container">
+                    <p class="no-peers">No hay peers conectados aún.</p>
+                </div>
+            </div>
+            <div class="peers-footer">
+                <button class="btn btn-secondary" onclick="app.refreshPeersList()">🔄 Actualizar</button>
+                <button class="btn btn-info" onclick="app.testSyncWithPeers()">🔄 Probar Sincronización</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Notificación del Patrón Strategy -->
     <div class="strategy-notification" id="strategyNotification" style="display: none;">
