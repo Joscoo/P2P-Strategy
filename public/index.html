@@ -1,0 +1,317 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📝 P2P Notes - Bloc Colaborativo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-content">
+                <h1>📝 P2P Notes</h1>
+                <p class="subtitle">Sistema de notas colaborativo descentralizado</p>
+            </div>
+            
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-dot" id="connectionStatus"></span>
+                    <span class="status-text">Estado</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">ID:</span>
+                    <code id="nodeId">-</code>
+                </div>
+                <div class="status-item">
+                    <span class="label"> Notas:</span>
+                    <strong id="noteCount">0</strong>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Editor de Notas (Modal) -->
+            <div class="editor-overlay" id="noteEditor" style="display: none;">
+                <div class="editor-modal">
+                    <div class="editor-header">
+                        <h2>✏️ Editor de Nota</h2>
+                        <button class="btn-close" id="closeEditor" title="Cerrar">✕</button>
+                    </div>
+                    <div class="editor-body">
+                        <input 
+                            type="text" 
+                            id="noteTitle" 
+                            class="input-field"
+                            placeholder="📌 Título de la nota..." 
+                            maxlength="100"
+                        />
+                        <textarea 
+                            id="noteContent" 
+                            class="textarea-field"
+                            placeholder="✍️ Escribe aquí el contenido de tu nota..." 
+                            rows="8"
+                        ></textarea>
+                    </div>
+                    <div class="editor-footer">
+                        <button id="saveNote" class="btn btn-primary">
+                            💾 Guardar
+                        </button>
+                        <button id="cancelEdit" class="btn btn-secondary">
+                            ❌ Cancelar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón Crear Nota -->
+            <div class="actions-bar">
+                <button id="createNote" class="btn btn-create">
+                    ➕ Nueva Nota
+                </button>
+            </div>
+
+            <!-- Lista de Notas -->
+            <section class="notes-section">
+                <div class="section-header">
+                    <h2>📚 Mis Notas</h2>
+                </div>
+                <div id="notesList" class="notes-grid">
+                    <!-- Las notas se renderizan aquí dinámicamente -->
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <p>💻 <strong>P2P Notes</strong> - Tecnología WebRTC + Socket.IO</p>
+            <p class="footer-info">Sistema descentralizado | Sincronización en tiempo real</p>
+        </footer>
+    </div>
+
+    <!-- Panel de Estrategias -->
+    <button class="strategy-fab" onclick="app.showStrategyPanel()" title="Configurar Estrategias" aria-label="Configurar Estrategias">
+        ⚙️
+    </button>
+
+    <!-- Botón de Pruebas -->
+    <button class="test-fab" onclick="app.showTestPanel()" title="Ejecutar Pruebas" aria-label="Ejecutar Pruebas">
+        🧪
+    </button>
+
+    <!-- Notificación del Patrón Strategy -->
+    <div class="strategy-notification" id="strategyNotification" style="display: none;">
+        <div class="notification-content">
+            <div class="notification-icon" id="notificationIcon">⚙️</div>
+            <div class="notification-text">
+                <div class="notification-title" id="notificationTitle">Estrategia Cambiada</div>
+                <div class="notification-description" id="notificationDescription"></div>
+            </div>
+            <button class="notification-close" onclick="app.closeNotification()">✕</button>
+        </div>
+    </div>
+
+    <div class="strategy-panel" id="strategyPanel" style="display: none;">
+        <div class="strategy-content">
+            <div class="strategy-header">
+                <h3>🎯 Patrón Strategy</h3>
+                <button class="btn-close-panel" onclick="app.showStrategyPanel()">✕</button>
+            </div>
+            
+            <div class="strategy-section">
+                <h4>🔄 Resolución de Conflictos</h4>
+                <p class="strategy-desc">Actual: <strong id="currentConflictStrategy">Last-Write-Wins</strong></p>
+                <p class="strategy-info" id="conflictStrategyInfo">La última modificación prevalece en caso de conflicto.</p>
+                <select id="conflictStrategySelect" onchange="app.setConflictStrategy(this.value)">
+                    <option value="last-write-wins">Last-Write-Wins (Último escribe)</option>
+                    <option value="first-write-wins">First-Write-Wins (Primero escribe)</option>
+                    <option value="version-based">Version-Based (Por versión)</option>
+                    <option value="content-merge">Content-Merge (Fusionar)</option>
+                    <option value="author-priority">Author-Priority (Prioridad autor)</option>
+                </select>
+            </div>
+
+            <div class="strategy-section">
+                <h4>💾 Almacenamiento</h4>
+                <p class="strategy-desc">Actual: <strong id="currentStorageStrategy">LocalStorage</strong></p>
+                <p class="strategy-info" id="storageStrategyInfo">Datos persistentes en el navegador.</p>
+                <select id="storageStrategySelect" onchange="app.setStorageStrategy(this.value)">
+                    <option value="local-storage">LocalStorage (Persistente)</option>
+                    <option value="session-storage">SessionStorage (Temporal)</option>
+                    <option value="in-memory">InMemory (Solo RAM)</option>
+                    <option value="indexed-db">IndexedDB (Gran capacidad)</option>
+                </select>
+            </div>
+
+            <div class="strategy-section">
+                <h4>📡 Broadcasting</h4>
+                <p class="strategy-desc">Actual: <strong id="currentBroadcastStrategy">Broadcast-All</strong></p>
+                <p class="strategy-info" id="broadcastStrategyInfo">Envío de mensajes a todos los nodos conectados.</p>
+                <select id="broadcastStrategySelect" onchange="app.setBroadcastStrategy(this.value)">
+                    <option value="broadcast-all">Broadcast-All (Todos)</option>
+                    <option value="selective">Selective (Selectivo)</option>
+                    <option value="gossip">Gossip Protocol (Epidémico)</option>
+                    <option value="priority">Priority-Based (Prioridad)</option>
+                    <option value="batch">Batch (Por lotes)</option>
+                </select>
+            </div>
+
+            <div class="strategy-actions">
+                <button class="btn btn-info" onclick="app.showStorageInfo()">
+                    📊 Ver Estadísticas
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Pruebas -->
+    <div class="test-panel" id="testPanel" style="display: none;">
+        <div class="test-content">
+            <div class="test-header">
+                <h3>🧪 Pruebas del Patrón Strategy</h3>
+                <button class="btn-close-panel" onclick="app.showTestPanel()">✕</button>
+            </div>
+            
+            <div class="test-tabs">
+                <button class="test-tab active" onclick="app.switchTestTab('conflict')">🔄 Conflictos</button>
+                <button class="test-tab" onclick="app.switchTestTab('storage')">💾 Almacenamiento</button>
+                <button class="test-tab" onclick="app.switchTestTab('broadcast')">📡 Broadcasting</button>
+            </div>
+
+            <!-- Tab Conflictos -->
+            <div id="test-conflict" class="test-tab-content active">
+                <h4>🔄 Pruebas de Resolución de Conflictos</h4>
+                <p class="test-description">
+                    <strong>Escenario:</strong> Se simulan dos notas con el mismo ID editadas simultáneamente.<br>
+                    <strong>Nota Local:</strong> Editada hace 5 segundos (versión 1)<br>
+                    <strong>Nota Remota:</strong> Editada ahora (versión 2)<br>
+                    <strong>Objetivo:</strong> Determinar qué nota prevalece según la estrategia.
+                </p>
+                
+                <div class="test-buttons">
+                    <button class="btn btn-test" onclick="app.runConflictTest('last-write-wins')">
+                        <span class="test-btn-title">1️⃣ Last-Write-Wins</span>
+                        <span class="test-btn-desc">La nota con timestamp más reciente gana</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runConflictTest('first-write-wins')">
+                        <span class="test-btn-title">2️⃣ First-Write-Wins</span>
+                        <span class="test-btn-desc">La primera escritura se preserva</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runConflictTest('version-based')">
+                        <span class="test-btn-title">3️⃣ Version-Based</span>
+                        <span class="test-btn-desc">La versión más alta prevalece</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runConflictTest('content-merge')">
+                        <span class="test-btn-title">4️⃣ Content-Merge</span>
+                        <span class="test-btn-desc">Fusiona ambos contenidos automáticamente</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runConflictTest('author-priority')">
+                        <span class="test-btn-title">5️⃣ Author-Priority</span>
+                        <span class="test-btn-desc">El nodo local siempre tiene prioridad</span>
+                    </button>
+                    <button class="btn btn-test btn-all" onclick="app.runAllConflictTests()">
+                        🚀 Ejecutar Todas las Pruebas de Conflicto
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Almacenamiento -->
+            <div id="test-storage" class="test-tab-content">
+                <h4>💾 Pruebas de Almacenamiento</h4>
+                <p class="test-description">
+                    <strong>Escenario:</strong> Se guardan 100 notas de prueba y luego se cargan.<br>
+                    <strong>Métricas:</strong> Tiempo de escritura, lectura, persistencia y espacio.<br>
+                    <strong>Objetivo:</strong> Comparar rendimiento y características de cada estrategia.
+                </p>
+                
+                <div class="test-buttons">
+                    <button class="btn btn-test" onclick="app.runStorageTest('local-storage')">
+                        <span class="test-btn-title">1️⃣ LocalStorage</span>
+                        <span class="test-btn-desc">5-10MB, Persistente, Síncrono</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runStorageTest('session-storage')">
+                        <span class="test-btn-title">2️⃣ SessionStorage</span>
+                        <span class="test-btn-desc">~5MB, Solo sesión, Síncrono</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runStorageTest('in-memory')">
+                        <span class="test-btn-title">3️⃣ InMemory</span>
+                        <span class="test-btn-desc">RAM, Temporal, Ultrarrápido</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runStorageTest('indexed-db')">
+                        <span class="test-btn-title">4️⃣ IndexedDB</span>
+                        <span class="test-btn-desc">GB, Persistente, Asíncrono</span>
+                    </button>
+                    <button class="btn btn-test btn-all" onclick="app.runAllStorageTests()">
+                        🚀 Comparar Todas las Estrategias
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Broadcasting -->
+            <div id="test-broadcast" class="test-tab-content">
+                <h4>📡 Pruebas de Broadcasting</h4>
+                <p class="test-description">
+                    <strong>Escenario:</strong> Envío de un mensaje a 10 peers simulados en la red.<br>
+                    <strong>Peers:</strong> Con diferentes prioridades y tasa de éxito del 95%.<br>
+                    <strong>Objetivo:</strong> Medir eficiencia, latencia y tasa de entrega.
+                </p>
+                
+                <div class="test-buttons">
+                    <button class="btn btn-test" onclick="app.runBroadcastTest('broadcast-all')">
+                        <span class="test-btn-title">1️⃣ Broadcast-All</span>
+                        <span class="test-btn-desc">Envía a todos los peers (10/10)</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runBroadcastTest('selective')">
+                        <span class="test-btn-title">2️⃣ Selective</span>
+                        <span class="test-btn-desc">Solo a peers seleccionados por filtro</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runBroadcastTest('gossip')">
+                        <span class="test-btn-title">3️⃣ Gossip Protocol</span>
+                        <span class="test-btn-desc">Propagación epidémica aleatoria</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runBroadcastTest('priority')">
+                        <span class="test-btn-title">4️⃣ Priority-Based</span>
+                        <span class="test-btn-desc">Por orden de prioridad (alto→bajo)</span>
+                    </button>
+                    <button class="btn btn-test" onclick="app.runBroadcastTest('batch')">
+                        <span class="test-btn-title">5️⃣ Batch</span>
+                        <span class="test-btn-desc">Agrupa mensajes en lotes</span>
+                    </button>
+                    <button class="btn btn-test btn-all" onclick="app.runAllBroadcastTests()">
+                        🚀 Ejecutar Todas las Pruebas
+                    </button>
+                </div>
+            </div>
+
+            <!-- Área de Resultados -->
+            <div id="testResults" class="test-results">
+                <h4>📊 Resultados de Pruebas</h4>
+                <div class="test-actions-bar">
+                    <button class="btn btn-test-action" onclick="app.clearTestNotes()" title="Eliminar todas las notas de prueba">
+                        🗑️ Limpiar Notas de Prueba
+                    </button>
+                    <button class="btn btn-test-action" onclick="app.clearTestResults()" title="Limpiar resultados del panel">
+                        🧹 Limpiar Resultados
+                    </button>
+                </div>
+                <div id="testResultsContent" class="test-results-content">
+                    <p class="no-results">No hay resultados aún. Ejecuta una prueba para ver los resultados.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Cargar estrategias primero -->
+    <script src="strategies/conflictResolutionStrategies.js"></script>
+    <script src="strategies/storageStrategies.js"></script>
+    <script src="strategies/broadcastStrategies.js"></script>
+    <!-- Luego la aplicación principal -->
+    <script src="app.js"></script>
+</body>
+</html>
