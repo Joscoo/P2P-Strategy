@@ -1,6 +1,17 @@
-﻿// P2P NOTES - Sistema de Notas Colaborativas Descentralizado
-// Tecnologías: WebRTC, Socket.IO, localStorage
-// PATRÓN STRATEGY IMPLEMENTADO para: Resolución de Conflictos, Almacenamiento y Broadcasting
+// P2P NOTES - Sistema de Notas Colaborativas Descentralizado
+// Tecnolog�as: WebRTC, Socket.IO, localStorage
+// PATR�N STRATEGY IMPLEMENTADO para: Resoluci�n de Conflictos, Almacenamiento y Broadcasting
+
+// DEBUG MÓVIL - Consola flotante (QUITAR DESPUÉS DE DEBUGGEAR)
+(function() {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+    script.onload = function() { 
+        eruda.init();
+        console.log('🔧 [DEBUG] Eruda consola activada para móvil');
+    };
+    document.head.appendChild(script);
+})();
 
 class P2PNotesApp {
     constructor() {
@@ -11,12 +22,19 @@ class P2PNotesApp {
         this.nodeId = this.generateNodeId();
         this.editingNoteId = null;
         
-        // PATRÓN STRATEGY: Inicializar gestores de estrategias
+        // PATR�N STRATEGY: Inicializar gestores de estrategias
         this.conflictResolver = new ConflictResolver(new LastWriteWinsStrategy());
         this.storageManager = new StorageManager(new LocalStorageStrategy());
         this.broadcastManager = new BroadcastManager(new BroadcastAllStrategy());
         
-        // Almacenar configuración de estrategias de peers remotos
+        // Almacenar configuraci�n de estrategias de peers remotos
+        this.peerStrategies = new Map(); // peerId -> { conflict, broadcast }
+        
+        // Control de sincronización para evitar loops
+        this.syncInProgress = new Set(); // peerIds que están sincronizando
+        
+        this.init();
+    }
         this.peerStrategies = new Map(); // peerId -> { conflict, broadcast }
         
         this.init();
@@ -39,16 +57,16 @@ class P2PNotesApp {
             nodeIdElement.textContent = this.nodeId;
         }
     }
-    // Establece la conexión con el servidor de señalización mediante Socket.IO
-    // Este servidor actúa como intermediario para el descubrimiento de peers y el intercambio de señales WebRTC
+    // Establece la conexi�n con el servidor de se�alizaci�n mediante Socket.IO
+    // Este servidor act�a como intermediario para el descubrimiento de peers y el intercambio de se�ales WebRTC
     initSocketConnection() {
-        // Inicializa la conexión Socket.IO con el servidor
+        // Inicializa la conexi�n Socket.IO con el servidor
         this.socket = io();
         
-        // Evento: Cuando se establece conexión exitosa con el servidor
+        // Evento: Cuando se establece conexi�n exitosa con el servidor
         this.socket.on('connect', () => {
             console.log('\n========================================');
-            console.log('🟢 CONECTADO AL SERVIDOR');
+            console.log('?? CONECTADO AL SERVIDOR');
             console.log('========================================');
             console.log('Tu Node ID:', this.nodeId);
             console.log('Socket ID:', this.socket.id);
@@ -56,11 +74,11 @@ class P2PNotesApp {
             
             // Actualiza el indicador visual de estado
             this.updateConnectionStatus(true);
-            // Muestra el ID único de este nodo en la interfaz
+            // Muestra el ID �nico de este nodo en la interfaz
             document.getElementById('nodeId').textContent = this.nodeId;
         });
 
-        // Evento: Cuando se pierde la conexión con el servidor
+        // Evento: Cuando se pierde la conexi�n con el servidor
         this.socket.on('disconnect', () => {
             console.log('[DESCONEXION] Desconectado del servidor');
             // Actualiza el indicador visual a desconectado
@@ -82,7 +100,7 @@ class P2PNotesApp {
         // Evento: Cuando un nuevo peer se une a la red
         this.socket.on('peer-joined', (peerId) => {
             console.log('[PEER] Nuevo peer:', peerId);
-            // Inicia conexión WebRTC con el nuevo peer si no está conectado
+            // Inicia conexi�n WebRTC con el nuevo peer si no est� conectado
             if (!this.peers.has(peerId)) {
                 this.connectToPeer(peerId);
             }
@@ -91,44 +109,44 @@ class P2PNotesApp {
         // Evento: Cuando un peer se desconecta de la red
         this.socket.on('peer-left', (peerId) => {
             console.log('[PEER] Desconectado:', peerId);
-            // Limpia la conexión y libera recursos del peer desconectado
+            // Limpia la conexi�n y libera recursos del peer desconectado
             this.removePeer(peerId);
         });
 
-        // Evento: Recibe señales WebRTC (ofertas, respuestas, ICE candidates) de otros peers
+        // Evento: Recibe se�ales WebRTC (ofertas, respuestas, ICE candidates) de otros peers
         this.socket.on('signal', (data) => {
-            // Procesa la señal recibida según su tipo
+            // Procesa la se�al recibida seg�n su tipo
             this.handleSignal(data);
         });
     }
-    // Inicia la conexión WebRTC P2P directa con otro peer
-    // Este nodo actúa como el Iniciador (Caller) que envía la oferta SDP
+    // Inicia la conexi�n WebRTC P2P directa con otro peer
+    // Este nodo act�a como el Iniciador (Caller) que env�a la oferta SDP
     async connectToPeer(peerId) {
         console.log('[WebRTC] Conectando con:', peerId);
 
-        // Verificar si ya existe una conexión con este peer
+        // Verificar si ya existe una conexi�n con este peer
         const existingPeer = this.peers.get(peerId);
         if (existingPeer && existingPeer.pc) {
             const state = existingPeer.pc.signalingState;
-            console.log(`[WebRTC] Ya existe conexión con ${peerId} en estado '${state}'`);
+            console.log(`[WebRTC] Ya existe conexi�n con ${peerId} en estado '${state}'`);
             
-            // Si ya está conectado o conectando, no crear nueva conexión
+            // Si ya est� conectado o conectando, no crear nueva conexi�n
             if (state === 'stable' || state === 'have-local-offer') {
                 const connState = existingPeer.pc.connectionState;
                 if (connState === 'connected' || connState === 'connecting') {
-                    console.warn('[WARN] Ya existe conexión activa, cancelando nueva conexión');
+                    console.warn('[WARN] Ya existe conexi�n activa, cancelando nueva conexi�n');
                     return;
                 }
             }
             
-            // Cerrar conexión anterior si existe
-            console.log('[WebRTC] Cerrando conexión anterior');
+            // Cerrar conexi�n anterior si existe
+            console.log('[WebRTC] Cerrando conexi�n anterior');
             existingPeer.pc.close();
             this.peers.delete(peerId);
         }
 
-        // Configuración de servidores ICE para descubrir direcciones IP públicas
-        // STUN servers ayudan a atravesar NATs y descubrir la IP pública
+        // Configuraci�n de servidores ICE para descubrir direcciones IP p�blicas
+        // STUN servers ayudan a atravesar NATs y descubrir la IP p�blica
         const configuration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },    // Servidor STUN de Google
@@ -136,13 +154,25 @@ class P2PNotesApp {
             ]
         };
         
-        // Crea una nueva conexión peer-to-peer con la configuración especificada
+        // Crea una nueva conexi�n peer-to-peer con la configuraci�n especificada
         const pc = new RTCPeerConnection(configuration);
 
         // Listener: Detecta cambios en el estado de la conexión WebRTC
         // Estados posibles: new, connecting, connected, disconnected, failed, closed
         pc.onconnectionstatechange = () => {
             console.log(`[WebRTC] Estado con ${peerId}:`, pc.connectionState);
+            
+            // Logging detallado para debugging
+            if (pc.connectionState === 'failed') {
+                console.error(`❌ [ERROR] Conexión FALLIDA con ${peerId}`);
+                console.log('ICE Connection State:', pc.iceConnectionState);
+                console.log('Signaling State:', pc.signalingState);
+            } else if (pc.connectionState === 'connected') {
+                console.log(`✅ [ÉXITO] Conectado exitosamente con ${peerId}`);
+            } else if (pc.connectionState === 'disconnected') {
+                console.warn(`⚠️ [WARN] Desconectado de ${peerId}, intentando reconectar...`);
+            }
+            
             this.updateStats();
         };
 
@@ -150,6 +180,19 @@ class P2PNotesApp {
         // Estados: new, gathering, complete
         pc.onicegatheringstatechange = () => {
             console.log(`[ICE] Gathering con ${peerId}:`, pc.iceGatheringState);
+            if (pc.iceGatheringState === 'complete') {
+                console.log(`✅ [ICE] Recolección completa con ${peerId}`);
+            }
+        };
+
+        // Monitorear estado ICE connection
+        pc.oniceconnectionstatechange = () => {
+            console.log(`[ICE] Connection State con ${peerId}:`, pc.iceConnectionState);
+            if (pc.iceConnectionState === 'failed') {
+                console.error(`❌ [ICE] Conexión ICE FALLIDA con ${peerId} - Verifica firewalls/NAT`);
+            } else if (pc.iceConnectionState === 'connected') {
+                console.log(`✅ [ICE] ICE conectado con ${peerId}`);
+            }
         };
 
         // Crea un canal de datos para intercambiar mensajes
@@ -158,11 +201,11 @@ class P2PNotesApp {
         this.setupDataChannel(dataChannel, peerId);
 
         // Listener: Se activa cada vez que se genera un nuevo ICE candidate
-        // Los ICE candidates son posibles rutas de conexión (direcciones IP/puertos)
+        // Los ICE candidates son posibles rutas de conexi�n (direcciones IP/puertos)
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 console.log('[ICE] Enviando candidate a', peerId);
-                // Envía el candidate al peer remoto a través del servidor de señalización
+                // Env�a el candidate al peer remoto a trav�s del servidor de se�alizaci�n
                 this.socket.emit('signal', {
                     to: peerId,
                     signal: { type: 'ice-candidate', candidate: event.candidate }
@@ -173,17 +216,17 @@ class P2PNotesApp {
         try {
             // Crea una oferta SDP que describe las capacidades multimedia de este peer
             const offer = await pc.createOffer();
-            // Establece la oferta como descripción local (inicia el proceso ICE)
+            // Establece la oferta como descripci�n local (inicia el proceso ICE)
             await pc.setLocalDescription(offer);
 
             console.log('[WebRTC] Enviando oferta a', peerId);
-            // Envía la oferta SDP al peer remoto para iniciar la negociación
+            // Env�a la oferta SDP al peer remoto para iniciar la negociaci�n
             this.socket.emit('signal', {
                 to: peerId,
                 signal: { type: 'offer', sdp: offer }
             });
 
-            // Almacena la conexión peer con su información de estado
+            // Almacena la conexi�n peer con su informaci�n de estado
             this.peers.set(peerId, { pc, dataChannel, isRemoteDescriptionSet: false });
             // Inicializa array para almacenar ICE candidates que lleguen antes de tiempo
             this.pendingCandidates.set(peerId, []);
@@ -205,7 +248,7 @@ class P2PNotesApp {
         }
     }
     // Responde a una oferta SDP recibida de otro peer
-    // Este nodo actúa como Receptor (Callee) que responde a la solicitud de conexión
+    // Este nodo act�a como Receptor (Callee) que responde a la solicitud de conexi�n
     async handleOffer(peerId, signal) {
         console.log('[WebRTC] Oferta recibida de', peerId);
 
@@ -215,26 +258,54 @@ class P2PNotesApp {
             const state = existingPeer.pc.signalingState;
             console.log(`[WebRTC] Ya existe conexión con ${peerId} en estado '${state}'`);
             
-            // Si ya está conectado o conectando, ignorar la nueva oferta
-            if (state !== 'stable' && state !== 'closed') {
-                console.warn('[WARN] Ignorando oferta duplicada, conexión en progreso');
+            // Resolver conflicto de ofertas simultáneas (glare)
+            if (state === 'have-local-offer') {
+                console.warn('[WARN] ⚠️ Conflicto de ofertas simultáneas detectado');
+                
+                // El peer con ID mayor responde a la oferta, el menor espera
+                if (this.nodeId > peerId) {
+                    console.log('[GLARE] 🔄 Mi ID es mayor, procesando oferta recibida');
+                    existingPeer.pc.close();
+                    this.peers.delete(peerId);
+                } else {
+                    console.log('[GLARE] ⏳ Mi ID es menor, esperando respuesta a mi oferta');
+                    return;
+                }
+            } else if (state !== 'stable' && state !== 'closed') {
+                console.warn('[WARN] Estado incompatible, ignorando oferta');
                 return;
             }
             
             // Si está stable o closed, cerrar y crear nueva conexión
-            console.log('[WebRTC] Cerrando conexión anterior y creando nueva');
-            existingPeer.pc.close();
+            if (state === 'stable' || state === 'closed') {
+                console.log('[WebRTC] Cerrando conexión anterior y creando nueva');
+                existingPeer.pc.close();
+            }
         }
 
-        // Configuración de servidores STUN para descubrir IP pública
+        // Configuraci�n de servidores STUN para descubrir IP p�blica
         const configuration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            iceCandidatePoolSize: 10
         };
 
-        // Crea la conexión peer-to-peer para responder a la oferta
+        // Crea la conexi�n peer-to-peer para responder a la oferta
         const pc = new RTCPeerConnection(configuration);
 
         // Listener: Se activa cuando el peer remoto crea un canal de datos
@@ -248,15 +319,51 @@ class P2PNotesApp {
         // Listener: Monitorea cambios en el estado de la conexión
         pc.onconnectionstatechange = () => {
             console.log(`[WebRTC] Estado con ${peerId}:`, pc.connectionState);
+            
+            if (pc.connectionState === 'failed') {
+                console.error(`❌ [ERROR] Conexión FALLIDA con ${peerId}`);
+                console.log('ICE Connection State:', pc.iceConnectionState);
+                console.log('Signaling State:', pc.signalingState);
+                this.showToast(`❌ Conexión perdida con ${peerId.substring(0, 8)}`, 'error');
+                
+                // Intentar reconexión automática después de 3 segundos
+                console.log(`🔄 [RECONEXIÓN] Intentando reconectar con ${peerId} en 3s...`);
+                setTimeout(() => {
+                    if (this.peers.has(peerId)) {
+                        console.log(`🔄 [RECONEXIÓN] Reintentando conexión con ${peerId}`);
+                        this.removePeer(peerId);
+                        this.createPeerConnection(peerId);
+                    }
+                }, 3000);
+            } else if (pc.connectionState === 'connected') {
+                console.log(`✅ [ÉXITO] Conectado exitosamente con ${peerId}`);
+            } else if (pc.connectionState === 'disconnected') {
+                console.warn(`⚠️ [WARN] Desconectado de ${peerId}`);
+                // No reconectar inmediatamente, esperar a ver si pasa a 'failed'
+            }
+            
             this.updateStats();
         };
 
         // Listener: Monitorea el proceso de recolección de ICE candidates
         pc.onicegatheringstatechange = () => {
             console.log(`[ICE] Gathering con ${peerId}:`, pc.iceGatheringState);
+            if (pc.iceGatheringState === 'complete') {
+                console.log(`✅ [ICE] Recolección completa con ${peerId}`);
+            }
         };
 
-        // Listener: Envía cada ICE candidate generado al peer remoto
+        // Monitorear estado ICE connection
+        pc.oniceconnectionstatechange = () => {
+            console.log(`[ICE] Connection State con ${peerId}:`, pc.iceConnectionState);
+            if (pc.iceConnectionState === 'failed') {
+                console.error(`❌ [ICE] Conexión ICE FALLIDA con ${peerId} - Verifica firewalls/NAT`);
+            } else if (pc.iceConnectionState === 'connected') {
+                console.log(`✅ [ICE] ICE conectado con ${peerId}`);
+            }
+        };
+
+        // Listener: Env�a cada ICE candidate generado al peer remoto
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 console.log('[ICE] Enviando candidate a', peerId);
@@ -268,20 +375,27 @@ class P2PNotesApp {
         };
 
         try {
-            // Establece la oferta SDP recibida como descripción remota
+            // Registrar peer INMEDIATAMENTE (antes de async) para evitar race condition
+            // Los candidates pueden llegar mientras esperamos setRemoteDescription
+            this.peers.set(peerId, { pc, dataChannel: null, isRemoteDescriptionSet: false });
+            
+            // Establece la oferta SDP recibida como descripci�n remota
             await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-            // Almacena la conexión marcando que ya tiene descripción remota
-            this.peers.set(peerId, { pc, dataChannel: null, isRemoteDescriptionSet: true });
-            // Procesa cualquier ICE candidate que llegó antes de la oferta
+            
+            // Actualizar estado: remote description ya establecida
+            const peer = this.peers.get(peerId);
+            if (peer) peer.isRemoteDescriptionSet = true;
+            
+            // Procesa cualquier ICE candidate que lleg� antes de la oferta
             await this.processPendingCandidates(peerId);
 
             // Crea una respuesta SDP que acepta/rechaza las capacidades ofrecidas
             const answer = await pc.createAnswer();
-            // Establece la respuesta como descripción local
+            // Establece la respuesta como descripci�n local
             await pc.setLocalDescription(answer);
 
             console.log('[WebRTC] Enviando answer a', peerId);
-            // Envía la respuesta SDP al peer que inició la conexión
+            // Env�a la respuesta SDP al peer que inici� la conexi�n
             this.socket.emit('signal', {
                 to: peerId,
                 signal: { type: 'answer', sdp: answer }
@@ -302,9 +416,9 @@ class P2PNotesApp {
             return;
         }
 
-        // Verificar el estado de la conexión
+        // Verificar el estado de la conexi�n
         const currentState = peer.pc.signalingState;
-        console.log('[WebRTC] Estado actual de señalización:', currentState);
+        console.log('[WebRTC] Estado actual de se�alizaci�n:', currentState);
 
         // Solo procesar la respuesta si estamos esperando una
         if (currentState !== 'have-local-offer') {
@@ -315,34 +429,43 @@ class P2PNotesApp {
 
         try {
             await peer.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            
+            // Marcar que remote description está establecida
             peer.isRemoteDescriptionSet = true;
             console.log('[WebRTC] Remote description establecida correctamente');
             await this.processPendingCandidates(peerId);
             this.updateStats();
         } catch (error) {
             console.error('[ERROR] Error en answer:', error);
-            console.error('[ERROR] Estado de señalización:', peer.pc.signalingState);
-            console.error('[ERROR] Estado de conexión:', peer.pc.connectionState);
+            console.error('[ERROR] Estado de se�alizaci�n:', peer.pc.signalingState);
+            console.error('[ERROR] Estado de conexi�n:', peer.pc.connectionState);
         }
     }
 
     // Maneja los ICE candidates recibidos de un peer remoto
-    // Los ICE candidates son posibles rutas de red para establecer la conexión
+    // Los ICE candidates son posibles rutas de red para establecer la conexi�n
     async handleIceCandidate(peerId, signal) {
         console.log('[ICE] Candidate recibido de', peerId);
 
-        // Busca la conexión peer existente
+        // Busca la conexi�n peer existente
         const peer = this.peers.get(peerId);
+        
+        // Si el peer no existe AÚN, guardar candidate como pendiente
+        // (puede llegar antes de que se complete handleOffer/handleAnswer)
         if (!peer) {
-            console.error('[ERROR] Peer no encontrado:', peerId);
+            console.log('[ICE] ⏳ Peer aún no registrado, guardando candidate pendiente');
+            if (!this.pendingCandidates.has(peerId)) {
+                this.pendingCandidates.set(peerId, []);
+            }
+            this.pendingCandidates.get(peerId).push(signal.candidate);
             return;
         }
 
-        // Verifica si la descripción remota ya fue establecida
-        // Los ICE candidates solo pueden agregarse después de setRemoteDescription
+        // Verifica si la descripci�n remota ya fue establecida
+        // Los ICE candidates solo pueden agregarse despu�s de setRemoteDescription
         if (!peer.isRemoteDescriptionSet) {
-            console.log('[ICE] Guardando candidate pendiente');
-            // Si la descripción remota no está lista, guarda el candidate para después
+            console.log('[ICE] Guardando candidate pendiente (sin remote description)');
+            // Si la descripci�n remota no est� lista, guarda el candidate para despu�s
             if (!this.pendingCandidates.has(peerId)) {
                 this.pendingCandidates.set(peerId, []);
             }
@@ -351,8 +474,8 @@ class P2PNotesApp {
         }
 
         try {
-            // Agrega el ICE candidate a la conexión peer
-            // Esto permite que WebRTC pruebe esta ruta de conexión
+            // Agrega el ICE candidate a la conexi�n peer
+            // Esto permite que WebRTC pruebe esta ruta de conexi�n
             await peer.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
             console.log('[ICE] Candidate agregado');
         } catch (error) {
@@ -380,22 +503,27 @@ class P2PNotesApp {
         this.pendingCandidates.set(peerId, []);
     }
 
-    // Configura los listeners del canal de datos (DataChannel) para comunicación P2P
+    // Configura los listeners del canal de datos (DataChannel) para comunicaci�n P2P
     // El DataChannel permite intercambiar mensajes directamente entre peers sin servidor
     setupDataChannel(dataChannel, peerId) {
-        // Listener: Se activa cuando el canal de datos se abre y está listo para usar
+        // Listener: Se activa cuando el canal de datos se abre y est� listo para usar
         dataChannel.onopen = () => {
-            console.log('[DataChannel] Abierto con', peerId);
+            console.log('✅ ✅ ✅ [DataChannel] ABIERTO con', peerId);
+            this.showToast(`✅ Conectado con peer ${peerId.substring(0, 8)}...`, 'success');
             
             // Actualiza la referencia del canal en el objeto peer
             const peer = this.peers.get(peerId);
             if (peer) {
                 peer.dataChannel = dataChannel;
+                console.log(`[DataChannel] Referencia actualizada para ${peerId}`);
+            } else {
+                console.error(`❌ [ERROR] Peer ${peerId} no encontrado al abrir DataChannel`);
             }
             
-            // Actualiza las estadísticas de la interfaz
+            // Actualiza las estad�sticas de la interfaz
             this.updateStats();
-            // Sincroniza todas las notas locales con el peer recién conectado
+            // Sincroniza todas las notas locales con el peer reci�n conectado
+            console.log(`[SYNC] Iniciando sincronización con ${peerId}...`);
             this.syncAllNotesWithPeer(peerId);
         };
 
@@ -413,25 +541,38 @@ class P2PNotesApp {
         // Listener: Se activa cuando se recibe un mensaje del peer remoto
         dataChannel.onmessage = (event) => {
             try {
+                console.log(`📨 [DataChannel] Mensaje recibido de ${peerId}`);
                 // Parsea el mensaje JSON recibido
                 const message = JSON.parse(event.data);
-                // Procesa el mensaje según su tipo (sync, create, update, delete)
+                console.log(`   Tipo: ${message.type}`);
+                // Procesa el mensaje seg�n su tipo (sync, create, update, delete)
                 this.handlePeerMessage(message, peerId);
             } catch (error) {
-                console.error('[ERROR] Error en mensaje:', error);
+                console.error('❌ [ERROR] Error en mensaje:', error);
+                console.error('   Datos:', event.data);
             }
         };
     }
 
-    syncAllNotesWithPeer(peerId) {
+    syncAllNotesWithPeer(peerId, isResponse = false) {
         const peer = this.peers.get(peerId);
         if (!peer?.dataChannel || peer.dataChannel.readyState !== 'open') {
             console.warn(`[SYNC] No se puede sincronizar con ${peerId}: DataChannel no disponible`);
             return;
         }
+        
+        // Prevenir loops de sincronización
+        if (!isResponse && this.syncInProgress.has(peerId)) {
+            console.log(`[SYNC] Ya hay sincronización en progreso con ${peerId}, omitiendo...`);
+            return;
+        }
+        
+        if (!isResponse) {
+            this.syncInProgress.add(peerId);
+        }
 
         console.log(`\n========================================`);
-        console.log('📤 SINCRONIZANDO TODAS LAS NOTAS');
+        console.log(`📤 SINCRONIZANDO TODAS LAS NOTAS ${isResponse ? '(RESPUESTA)' : ''}`);
         console.log(`========================================`);
         console.log('Peer destino:', peerId);
         console.log('Total de notas a enviar:', this.notes.size);
@@ -443,7 +584,7 @@ class P2PNotesApp {
         notesArray.forEach((note, index) => {
             console.log(`\nNota ${index + 1}:`);
             console.log('  - ID:', note.id);
-            console.log('  - Título:', note.title);
+            console.log('  - T�tulo:', note.title);
             console.log('  - Autor:', note.author);
             console.log('  - Timestamp:', new Date(note.timestamp).toLocaleString());
         });
@@ -452,27 +593,36 @@ class P2PNotesApp {
             type: 'sync-all',
             notes: notesArray,
             from: this.nodeId,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isResponse: isResponse
         };
 
         try {
             const messageStr = JSON.stringify(message);
             const messageSize = new Blob([messageStr]).size;
             
-            console.log('\n📦 Mensaje de sincronización:');
+            console.log('\n?? Mensaje de sincronizaci�n:');
             console.log('  - Tipo:', message.type);
-            console.log('  - Tamaño:', messageSize, 'bytes');
+            console.log('  - Tama�o:', messageSize, 'bytes');
             console.log('  - Notas incluidas:', notesArray.length);
+            console.log('  - Es respuesta:', isResponse);
             
             peer.dataChannel.send(messageStr);
             
-            // Enviar también la configuración de estrategias
-            this.sendStrategyConfig(peerId);
+            // Enviar tambi�n la configuraci�n de estrategias
+            if (!isResponse) {
+                this.sendStrategyConfig(peerId);
+            }
             
-            console.log('✅ Sincronización enviada exitosamente');
+            console.log('? Sincronizaci�n enviada exitosamente');
             console.log('========================================\n');
+            
+            // Limpiar flag después de 2 segundos
+            if (!isResponse) {
+                setTimeout(() => this.syncInProgress.delete(peerId), 2000);
+            }
         } catch (error) {
-            console.error('\n❌ ERROR AL SINCRONIZAR');
+            console.error('\n? ERROR AL SINCRONIZAR');
             console.error('========================================');
             console.error('Peer:', peerId);
             console.error('Error:', error.message);
@@ -481,7 +631,7 @@ class P2PNotesApp {
         }
     }
 
-    // Enviar configuración de estrategias al peer
+    // Enviar configuraci�n de estrategias al peer
     sendStrategyConfig(peerId) {
         const peer = this.peers.get(peerId);
         if (!peer?.dataChannel || peer.dataChannel.readyState !== 'open') {
@@ -502,25 +652,25 @@ class P2PNotesApp {
 
         try {
             peer.dataChannel.send(JSON.stringify(message));
-            console.log('[CONFIG] Configuración de estrategias enviada a', peerId);
+            console.log('[CONFIG] Configuraci�n de estrategias enviada a', peerId);
         } catch (error) {
-            console.error('[ERROR] Error al enviar configuración:', error);
+            console.error('[ERROR] Error al enviar configuraci�n:', error);
         }
     }
 
-    // Recibir y almacenar configuración de estrategias del peer
+    // Recibir y almacenar configuraci�n de estrategias del peer
     handleStrategyConfig(config, peerId) {
         console.log('\n========================================');
-        console.log('⚙️ CONFIGURACIÓN DE PEER RECIBIDA');
+        console.log('?? CONFIGURACI�N DE PEER RECIBIDA');
         console.log('========================================');
         console.log('Peer:', peerId);
         console.log('Estrategia de conflictos:', config.conflict);
         console.log('Estrategia de broadcast:', config.broadcast);
         
-        // Almacenar configuración del peer
+        // Almacenar configuraci�n del peer
         this.peerStrategies.set(peerId, config);
         
-        // Actualizar panel de peers si está abierto
+        // Actualizar panel de peers si est� abierto
         const peersPanel = document.getElementById('peersPanel');
         if (peersPanel && peersPanel.style.display === 'block') {
             this.refreshPeersList();
@@ -529,14 +679,14 @@ class P2PNotesApp {
         // Detectar incompatibilidades
         const myConflictStrategy = this.conflictResolver.getCurrentStrategyName();
         if (config.conflict !== myConflictStrategy) {
-            console.warn('⚠️ ADVERTENCIA: Incompatibilidad detectada');
+            console.warn('?? ADVERTENCIA: Incompatibilidad detectada');
             console.warn(`   Tu estrategia: ${myConflictStrategy}`);
             console.warn(`   Peer ${peerId}: ${config.conflict}`);
             console.warn('   Esto puede causar datos inconsistentes entre peers.');
             
             this.showStrategyWarning(peerId, myConflictStrategy, config.conflict);
         } else {
-            console.log('✅ Estrategias compatibles');
+            console.log('? Estrategias compatibles');
         }
         console.log('========================================\n');
     }
@@ -547,8 +697,8 @@ class P2PNotesApp {
         warningDiv.className = 'strategy-warning';
         warningDiv.innerHTML = `
             <div class="warning-content">
-                <h4>⚠️ Incompatibilidad de Estrategias Detectada</h4>
-                <p>El peer <code>${peerId.substring(0, 12)}...</code> está usando una estrategia diferente:</p>
+                <h4>?? Incompatibilidad de Estrategias Detectada</h4>
+                <p>El peer <code>${peerId.substring(0, 12)}...</code> est� usando una estrategia diferente:</p>
                 <ul>
                     <li><strong>Tu estrategia:</strong> ${myStrategy}</li>
                     <li><strong>Peer remoto:</strong> ${peerStrategy}</li>
@@ -556,13 +706,13 @@ class P2PNotesApp {
                 <p>Esto puede causar que las notas sean diferentes en cada dispositivo.</p>
                 <div class="warning-actions">
                     <button class="btn btn-warning" onclick="app.requestStrategyChange('${peerId}')">
-                        📤 Sugerir mi configuración al peer
+                        ?? Sugerir mi configuraci�n al peer
                     </button>
                     <button class="btn btn-secondary" onclick="app.adoptPeerStrategy('${peerId}')">
-                        📥 Adoptar configuración del peer
+                        ?? Adoptar configuraci�n del peer
                     </button>
                     <button class="btn btn-secondary" onclick="this.parentElement.parentElement.parentElement.remove()">
-                        ❌ Ignorar
+                        ? Ignorar
                     </button>
                 </div>
             </div>
@@ -573,7 +723,7 @@ class P2PNotesApp {
         if (!existingWarning) {
             document.body.appendChild(warningDiv);
             
-            // Auto-eliminar después de 30 segundos
+            // Auto-eliminar despu�s de 30 segundos
             setTimeout(() => {
                 if (warningDiv.parentElement) {
                     warningDiv.remove();
@@ -586,7 +736,7 @@ class P2PNotesApp {
     requestStrategyChange(peerId) {
         const peer = this.peers.get(peerId);
         if (!peer?.dataChannel || peer.dataChannel.readyState !== 'open') {
-            alert('El peer no está conectado');
+            alert('El peer no est� conectado');
             return;
         }
 
@@ -615,21 +765,21 @@ class P2PNotesApp {
     adoptPeerStrategy(peerId) {
         const peerConfig = this.peerStrategies.get(peerId);
         if (!peerConfig) {
-            alert('Configuración del peer no disponible');
+            alert('Configuraci�n del peer no disponible');
             return;
         }
 
-        console.log(`[CONFIG] Adoptando configuración de ${peerId}`);
+        console.log(`[CONFIG] Adoptando configuraci�n de ${peerId}`);
         
         // Cambiar estrategia de conflictos
         this.setConflictStrategy(peerConfig.conflict);
         
-        // Opcional: cambiar broadcast también
+        // Opcional: cambiar broadcast tambi�n
         if (peerConfig.broadcast) {
             this.setBroadcastStrategy(peerConfig.broadcast);
         }
 
-        alert(`Configuración adoptada:\n- Conflictos: ${peerConfig.conflict}\n- Broadcasting: ${peerConfig.broadcast}`);
+        alert(`Configuraci�n adoptada:\n- Conflictos: ${peerConfig.conflict}\n- Broadcasting: ${peerConfig.broadcast}`);
         
         // Cerrar advertencia
         const warning = document.querySelector('.strategy-warning');
@@ -646,7 +796,7 @@ class P2PNotesApp {
             ? this.conflictResolver.getCurrentStrategyName()
             : this.broadcastManager.getCurrentStrategyName();
 
-        if (confirm(`El peer ${fromPeerId.substring(0, 12)}... sugiere cambiar tu estrategia de ${strategyType}:\n\nActual: ${currentStrategy}\nSugerida: ${strategyName}\n\n¿Aceptar el cambio?`)) {
+        if (confirm(`El peer ${fromPeerId.substring(0, 12)}... sugiere cambiar tu estrategia de ${strategyType}:\n\nActual: ${currentStrategy}\nSugerida: ${strategyName}\n\n�Aceptar el cambio?`)) {
             if (strategyType === 'conflict') {
                 this.setConflictStrategy(strategyName);
             } else if (strategyType === 'broadcast') {
@@ -659,31 +809,31 @@ class P2PNotesApp {
         }
     }
 
-    // Procesa los mensajes recibidos de otros peers a través del DataChannel
-    // Distribuye los mensajes según su tipo a los handlers específicos
+    // Procesa los mensajes recibidos de otros peers a trav�s del DataChannel
+    // Distribuye los mensajes seg�n su tipo a los handlers espec�ficos
     handlePeerMessage(message, peerId) {
         console.log('[MENSAJE] Recibido de', peerId, ':', message.type);
 
-        // Enruta el mensaje al handler apropiado según el tipo
+        // Enruta el mensaje al handler apropiado seg�n el tipo
         switch (message.type) {
             case 'sync-all':
-                // Sincronización inicial: recibe todas las notas del peer
-                this.handleSyncAll(message.notes);
+                // Sincronizaci�n inicial: recibe todas las notas del peer
+                this.handleSyncAll(message.notes, peerId, message);
                 break;
             case 'note-created':
-                // Notificación de nueva nota creada por el peer
+                // Notificaci�n de nueva nota creada por el peer
                 this.handleRemoteNoteCreated(message.note);
                 break;
             case 'note-updated':
-                // Notificación de nota modificada por el peer
+                // Notificaci�n de nota modificada por el peer
                 this.handleRemoteNoteUpdated(message.note);
                 break;
             case 'note-deleted':
-                // Notificación de nota eliminada por el peer
+                // Notificaci�n de nota eliminada por el peer
                 this.handleRemoteNoteDeleted(message.noteId);
                 break;
             case 'strategy-config':
-                // Configuración de estrategias del peer remoto
+                // Configuraci�n de estrategias del peer remoto
                 this.handleStrategyConfig(message.config, peerId);
                 break;
             case 'strategy-change-request':
@@ -696,45 +846,82 @@ class P2PNotesApp {
         }
     }
 
-    handleSyncAll(remoteNotes) {
-        console.log(`[SYNC] Procesando ${remoteNotes.length} notas remotas`);
+    handleSyncAll(remoteNotes, peerId, message) {
+        console.log(`\n📥 [SYNC] Procesando ${remoteNotes.length} notas remotas de ${peerId}`);
+        console.log(`📦 [SYNC] Notas locales actuales: ${this.notes.size}`);
+        console.log(`🔄 [SYNC] Es respuesta: ${message?.isResponse || false}`);
 
-        let added = 0, updated = 0, skipped = 0;
-
+        let added = 0, updated = 0, skipped = 0, deleted = 0;
+        
+        // Crear un Set con los IDs de las notas remotas
+        const remoteNoteIds = new Set(remoteNotes.map(note => note.id));
+        
+        // Primero, procesar las notas recibidas
         remoteNotes.forEach(remoteNote => {
             const localNote = this.notes.get(remoteNote.id);
 
             if (!localNote) {
                 this.notes.set(remoteNote.id, remoteNote);
                 added++;
+                console.log(`  ➕ Agregada: ${remoteNote.title}`);
             } else {
-                // PATRÓN STRATEGY: Usar estrategia de resolución de conflictos
+                // PATR�N STRATEGY: Usar estrategia de resoluci�n de conflictos
                 const resolvedNote = this.conflictResolver.resolve(localNote, remoteNote);
-                if (resolvedNote.id === remoteNote.id || resolvedNote.timestamp !== localNote.timestamp) {
+                if (resolvedNote.timestamp !== localNote.timestamp) {
                     this.notes.set(remoteNote.id, resolvedNote);
                     updated++;
+                    console.log(`  ♻️ Actualizada: ${resolvedNote.title}`);
                 } else {
                     skipped++;
                 }
             }
         });
+        
+        // Detectar notas que tenemos localmente pero no están en remoto
+        // (probablemente fueron eliminadas en el peer remoto)
+        const localNotesToCheck = Array.from(this.notes.keys()).filter(id => {
+            return !remoteNoteIds.has(id) && !id.startsWith(`note_${this.nodeId}`);
+        });
+        
+        if (localNotesToCheck.length > 0) {
+            console.log(`⚠️ [SYNC] Detectadas ${localNotesToCheck.length} notas locales no presentes en remoto`);
+            // No eliminar automáticamente - podría ser que las creamos recientemente
+            // Solo mostrar advertencia
+        }
 
-        console.log(`[SYNC] ${added} nuevas, ${updated} actualizadas, ${skipped} omitidas`);
-        console.log(`[SYNC] Estrategia usada: ${this.conflictResolver.getCurrentStrategyName()}`);
+        console.log(`\n📊 [SYNC] Resumen:`);
+        console.log(`  ➕ ${added} nuevas`);
+        console.log(`  ♻️ ${updated} actualizadas`);
+        console.log(`  ⏭️ ${skipped} sin cambios`);
+        console.log(`  📦 Total después: ${this.notes.size}`);
+        console.log(`  🎯 Estrategia: ${this.conflictResolver.getCurrentStrategyName()}\n`);
 
         this.saveNotesToStorage();
         this.renderNotes();
         this.updateStats();
+        
+        // Responder con sincronización inversa SOLO si no es una respuesta ya
+        // Esto previene loops infinitos
+        if (!message?.isResponse) {
+            const peer = this.peers.get(peerId);
+            if (peer?.dataChannel && peer.dataChannel.readyState === 'open') {
+                console.log(`🔄 [SYNC] Enviando sincronización inversa a ${peerId}...`);
+                setTimeout(() => this.syncAllNotesWithPeer(peerId, true), 500);
+            }
+        } else {
+            console.log(`✅ [SYNC] Sincronización bidireccional completada con ${peerId}`);
+            this.syncInProgress.delete(peerId);
+        }
     }
 
     handleRemoteNoteCreated(note) {
         const existingNote = this.notes.get(note.id);
         
         console.log('\n========================================');
-        console.log('📩 NOTA CREADA REMOTAMENTE');
+        console.log('?? NOTA CREADA REMOTAMENTE');
         console.log('========================================');
         console.log('ID:', note.id);
-        console.log('Título:', note.title);
+        console.log('T�tulo:', note.title);
         console.log('Contenido:', note.content.substring(0, 50) + (note.content.length > 50 ? '...' : ''));
         console.log('Autor remoto:', note.author);
         console.log('Timestamp:', new Date(note.timestamp).toLocaleString());
@@ -747,22 +934,22 @@ class P2PNotesApp {
             this.renderNotes();
             this.updateStats();
             
-            // Mostrar notificación
-            this.showToast('✅ Nueva nota recibida', note.title, 'success');
+            // Mostrar notificaci�n
+            this.showToast('? Nueva nota recibida', note.title, 'success');
         } else {
             console.log('Estado: Conflicto detectado, resolviendo...');
             console.log('Estrategia:', this.conflictResolver.getCurrentStrategyName());
-            // PATRÓN STRATEGY: Resolver conflicto con estrategia actual
+            // PATR�N STRATEGY: Resolver conflicto con estrategia actual
             const resolvedNote = this.conflictResolver.resolve(existingNote, note);
-            console.log('Resolución: Nota ' + (resolvedNote.id === note.id ? 'remota' : 'local') + ' prevalece');
+            console.log('Resoluci�n: Nota ' + (resolvedNote.id === note.id ? 'remota' : 'local') + ' prevalece');
             console.log('========================================\n');
             this.notes.set(note.id, resolvedNote);
             this.saveNotesToStorage();
             this.renderNotes();
             this.updateStats();
             
-            // Mostrar notificación de conflicto resuelto
-            this.showToast('⚠️ Conflicto resuelto', note.title, 'warning');
+            // Mostrar notificaci�n de conflicto resuelto
+            this.showToast('?? Conflicto resuelto', note.title, 'warning');
         }
     }
 
@@ -770,24 +957,24 @@ class P2PNotesApp {
         const existingNote = this.notes.get(note.id);
         
         console.log('\n========================================');
-        console.log('📝 NOTA ACTUALIZADA REMOTAMENTE');
+        console.log('?? NOTA ACTUALIZADA REMOTAMENTE');
         console.log('========================================');
         console.log('ID:', note.id);
-        console.log('Título:', note.title);
+        console.log('T�tulo:', note.title);
         console.log('Contenido:', note.content.substring(0, 50) + (note.content.length > 50 ? '...' : ''));
         console.log('Autor remoto:', note.author);
         console.log('Timestamp:', new Date(note.timestamp).toLocaleString());
         
         if (!existingNote) {
-            console.log('Estado: Nota no existía localmente, agregando');
+            console.log('Estado: Nota no exist�a localmente, agregando');
             console.log('========================================\n');
             this.notes.set(note.id, note);
         } else {
             console.log('Estado: Actualizando nota existente');
-            console.log('Estrategia de resolución:', this.conflictResolver.getCurrentStrategyName());
-            // PATRÓN STRATEGY: Resolver conflicto con estrategia actual
+            console.log('Estrategia de resoluci�n:', this.conflictResolver.getCurrentStrategyName());
+            // PATR�N STRATEGY: Resolver conflicto con estrategia actual
             const resolvedNote = this.conflictResolver.resolve(existingNote, note);
-            console.log('Resolución: Versión ' + (resolvedNote.timestamp === note.timestamp ? 'remota' : 'local') + ' prevalece');
+            console.log('Resoluci�n: Versi�n ' + (resolvedNote.timestamp === note.timestamp ? 'remota' : 'local') + ' prevalece');
             console.log('========================================\n');
             this.notes.set(note.id, resolvedNote);
         }
@@ -795,54 +982,72 @@ class P2PNotesApp {
         this.renderNotes();
         this.updateStats();
         
-        // Mostrar notificación
-        this.showToast('📝 Nota actualizada', note.title, 'info');
+        // Mostrar notificaci�n
+        this.showToast('?? Nota actualizada', note.title, 'info');
     }
 
     handleRemoteNoteDeleted(noteId) {
         const note = this.notes.get(noteId);
         
-        console.log('\n========================================');
-        console.log('🗑️  NOTA ELIMINADA REMOTAMENTE');
+        console.log('\n📨🛡️ ========================================');
+        console.log('🛡️  ELIMINACIÓN REMOTA RECIBIDA');
         console.log('========================================');
-        console.log('ID:', noteId);
+        console.log('ID a eliminar:', noteId);
         
         if (this.notes.has(noteId)) {
-            const noteTitle = note ? note.title : 'Sin título';
+            const noteTitle = note ? note.title : 'Sin t�tulo';
             if (note) {
-                console.log('Título:', note.title);
+                console.log('T�tulo:', note.title);
                 console.log('Autor:', note.author);
             }
-            console.log('Estado: Eliminando nota local');
-            console.log('Notas restantes:', this.notes.size - 1);
-            console.log('========================================\n');
+            console.log('✅ Estado: Eliminando nota local');
+            console.log('Notas antes:', this.notes.size);
+            
             this.notes.delete(noteId);
+            
+            console.log('Notas despu�s:', this.notes.size);
+            console.log('========================================\n');
+            
             this.saveNotesToStorage();
             this.renderNotes();
             this.updateStats();
             
-            // Mostrar notificación
-            this.showToast('🗑️ Nota eliminada', noteTitle, 'error');
+            // Mostrar notificaci�n
+            this.showToast('🛡️ Nota eliminada remotamente', noteTitle, 'error');
         } else {
-            console.log('Estado: Nota no existía localmente');
+            console.log('⚠️ Estado: Nota no exist�a localmente (ya eliminada o nunca existi�)');
+            console.log('Notas actuales:', Array.from(this.notes.keys()));
             console.log('========================================\n');
         }
     }
 
-    // PATRÓN STRATEGY: Envía un mensaje usando la estrategia de broadcasting actual
+    // PATR�N STRATEGY: Env�a un mensaje usando la estrategia de broadcasting actual
     // Utilizado para propagar cambios de notas (crear, actualizar, eliminar) a toda la red
     broadcastToPeers(message) {
-        // Asigna un ID único al mensaje si no lo tiene
+        // Asigna un ID �nico al mensaje si no lo tiene
         if (!message.id) {
             message.id = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
         }
 
+        console.log(`\n📡 [BROADCAST] Tipo: ${message.type}`);
+        console.log(`   Total peers: ${this.peers.size}`);
+        
+        // Contar peers conectados
+        let connected = 0;
+        this.peers.forEach((peer, peerId) => {
+            const isConnected = peer.dataChannel && peer.dataChannel.readyState === 'open';
+            console.log(`   - ${peerId.substring(0, 12)}: ${isConnected ? '✅ Conectado' : '❌ Desconectado'}`);
+            if (isConnected) connected++;
+        });
+        
+        console.log(`   Peers conectados: ${connected}/${this.peers.size}`);
+
         // Delega el broadcasting a la estrategia actual
         const result = this.broadcastManager.broadcast(this.peers, message);
         
-        // Registra estadísticas del broadcast
+        // Registra estad�sticas del broadcast
         console.log(`[BROADCAST] Estrategia: ${result.strategy}`);
-        console.log(`[BROADCAST] Resultado: ${result.sent} enviados, ${result.failed} fallos`);
+        console.log(`[BROADCAST] Resultado: ${result.sent} enviados, ${result.failed} fallos\n`);
         
         return result;
     }
@@ -874,10 +1079,10 @@ class P2PNotesApp {
         };
 
         console.log('\n========================================');
-        console.log('📝 CREANDO NUEVA NOTA');
+        console.log('?? CREANDO NUEVA NOTA');
         console.log('========================================');
         console.log('ID:', note.id);
-        console.log('Título:', note.title);
+        console.log('T�tulo:', note.title);
         console.log('Contenido:', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
         console.log('Timestamp:', new Date(note.timestamp).toLocaleString());
         console.log('Autor:', this.nodeId);
@@ -911,15 +1116,15 @@ class P2PNotesApp {
         const oldTimestamp = note.timestamp;
 
         console.log('\n========================================');
-        console.log('✏️  EDITANDO NOTA');
+        console.log('??  EDITANDO NOTA');
         console.log('========================================');
         console.log('ID:', noteId);
         console.log('\nANTES:');
-        console.log('  Título:', oldTitle);
+        console.log('  T�tulo:', oldTitle);
         console.log('  Contenido:', oldContent.substring(0, 50) + (oldContent.length > 50 ? '...' : ''));
         console.log('  Timestamp:', new Date(oldTimestamp).toLocaleString());
-        console.log('\nDESPUÉS:');
-        console.log('  Título:', title);
+        console.log('\nDESPU�S:');
+        console.log('  T�tulo:', title);
         console.log('  Contenido:', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
 
         note.title = title;
@@ -934,10 +1139,10 @@ class P2PNotesApp {
         this.renderNotes();
         this.updateStats();
         
-        // Mostrar toast de confirmación
+        // Mostrar toast de confirmaci�n
         this.showToast(
             'Nota actualizada',
-            `Se actualizó "${title}"`,
+            `Se actualiz� "${title}"`,
             'success'
         );
 
@@ -951,40 +1156,48 @@ class P2PNotesApp {
         const note = this.notes.get(noteId);
         
         console.log('\n========================================');
-        console.log('🗑️  ELIMINANDO NOTA');
+        console.log('???  ELIMINANDO NOTA');
         console.log('========================================');
         console.log('ID:', noteId);
         if (note) {
-            console.log('Título:', note.title);
+            console.log('T�tulo:', note.title);
             console.log('Contenido:', note.content.substring(0, 50) + (note.content.length > 50 ? '...' : ''));
             console.log('Creada:', new Date(note.timestamp).toLocaleString());
             console.log('Autor:', note.author);
         } else {
-            console.warn('⚠️ NOTA NO ENCONTRADA EN LA COLECCIÓN');
+            console.warn('?? NOTA NO ENCONTRADA EN LA COLECCI�N');
             console.log('Notas disponibles:', Array.from(this.notes.keys()));
         }
         console.log('Total de notas antes:', this.notes.size);
         
         const deleted = this.notes.delete(noteId);
-        console.log('Eliminación exitosa:', deleted);
-        console.log('Total de notas después:', this.notes.size);
+        console.log('Eliminaci�n exitosa:', deleted);
+        console.log('Total de notas despu�s:', this.notes.size);
         console.log('========================================\n');
 
         this.saveNotesToStorage();
         this.renderNotes();
         this.updateStats();
         
-        // Mostrar toast de confirmación
+        // Mostrar toast de confirmaci�n
         this.showToast(
             'Nota eliminada',
-            `Se eliminó la nota "${note ? note.title : 'Sin título'}"`,
+            `Se elimin� la nota "${note ? note.title : 'Sin t�tulo'}"`,
             'success'
         );
 
-        this.broadcastToPeers({
+        console.log('📤 [DELETE] Broadcasting eliminaci�n a peers...');
+        const broadcastResult = this.broadcastToPeers({
             type: 'note-deleted',
-            noteId: noteId
+            noteId: noteId,
+            from: this.nodeId,
+            timestamp: Date.now()
         });
+        
+        console.log(`📤 [DELETE] Broadcast completado: ${broadcastResult.sent} peers notificados`);
+        if (broadcastResult.failed > 0) {
+            console.warn(`⚠️ [DELETE] ${broadcastResult.failed} peers no recibieron la eliminaci�n`);
+        }
     }
 
     generateNoteId() {
@@ -992,7 +1205,7 @@ class P2PNotesApp {
     }
 
     saveNotesToStorage() {
-        // PATRÓN STRATEGY: Usar estrategia de almacenamiento actual
+        // PATR�N STRATEGY: Usar estrategia de almacenamiento actual
         const notesArray = Array.from(this.notes.values());
         const success = this.storageManager.save('p2p-notes', notesArray);
         
@@ -1004,7 +1217,7 @@ class P2PNotesApp {
     }
 
     loadNotesFromStorage() {
-        // PATRÓN STRATEGY: Usar estrategia de almacenamiento actual
+        // PATR�N STRATEGY: Usar estrategia de almacenamiento actual
         const notesArray = this.storageManager.load('p2p-notes');
         
         if (notesArray && Array.isArray(notesArray)) {
@@ -1034,7 +1247,7 @@ class P2PNotesApp {
             this.cancelEdit();
         });
 
-        // Cerrar modal al hacer clic fuera de él
+        // Cerrar modal al hacer clic fuera de �l
         document.getElementById('noteEditor').addEventListener('click', (e) => {
             if (e.target.id === 'noteEditor') {
                 this.cancelEdit();
@@ -1088,7 +1301,14 @@ class P2PNotesApp {
 
     renderNotes() {
         const container = document.getElementById('notesList');
+        if (!container) {
+            console.error('❌ [ERROR] Contenedor notesList no encontrado en el DOM');
+            return;
+        }
+        
         const notesArray = Array.from(this.notes.values());
+        
+        console.log(`[RENDER] Renderizando ${notesArray.length} nota(s)`);
 
         if (notesArray.length === 0) {
             container.innerHTML = '<div class="empty-state">No hay notas. Crea una nueva nota para comenzar.</div>';
@@ -1098,13 +1318,10 @@ class P2PNotesApp {
         notesArray.sort((a, b) => b.timestamp - a.timestamp);
 
         container.innerHTML = notesArray.map(note => {
-            const isTestNote = note.isTestNote === true;
-            const testBadge = isTestNote ? '<span class="test-badge">🧪 PRUEBA</span>' : '';
-            
             return `
-            <div class="note-card ${isTestNote ? 'test-note' : ''}" data-id="${note.id}">
+            <div class="note-card" data-id="${note.id}">
                 <div class="note-header">
-                    <h3 class="note-title">${this.escapeHtml(note.title)} ${testBadge}</h3>
+                    <h3 class="note-title">${this.escapeHtml(note.title)}</h3>
                     <div class="note-actions">
                         <button class="note-btn edit" onclick="app.editNote('${note.id}')">Editar</button>
                         <button class="note-btn delete" onclick="app.deleteNote('${note.id}')">Eliminar</button>
@@ -1116,7 +1333,6 @@ class P2PNotesApp {
                         ${note.origin === this.nodeId ? '🏠 Tú' : '🌐 ' + note.author.substring(0, 12)}
                     </span>
                     <span class="note-time">${this.formatDate(note.timestamp)}</span>
-                    ${isTestNote ? '<span class="test-type">Tipo: ' + (note.testType || 'general') + '</span>' : ''}
                 </div>
             </div>
             `;
@@ -1126,7 +1342,7 @@ class P2PNotesApp {
     updateStats() {
         document.getElementById('noteCount').textContent = this.notes.size;
         
-        // Actualizar información de estrategias si existen los elementos
+        // Actualizar informaci�n de estrategias si existen los elementos
         const conflictStrategyEl = document.getElementById('currentConflictStrategy');
         if (conflictStrategyEl) {
             conflictStrategyEl.textContent = this.conflictResolver.getCurrentStrategyName();
@@ -1164,7 +1380,7 @@ class P2PNotesApp {
         let disconnectedCount = 0;
         
         if (peersArray.length === 0) {
-            container.innerHTML = '<p class="no-peers">No hay peers conectados aún.</p>';
+            container.innerHTML = '<p class="no-peers">No hay peers conectados a�n.</p>';
             document.getElementById('totalPeers').textContent = '0';
             document.getElementById('connectedPeers').textContent = '0';
             document.getElementById('disconnectedPeers').textContent = '0';
@@ -1184,11 +1400,11 @@ class P2PNotesApp {
                 disconnectedCount++;
             }
             
-            const statusIcon = isConnected ? '🟢' : '🔴';
+            const statusIcon = isConnected ? '??' : '??';
             const statusText = isConnected ? 'Conectado' : 'Desconectado';
             const statusClass = isConnected ? 'peer-connected' : 'peer-disconnected';
             
-            // Obtener configuración de estrategias del peer
+            // Obtener configuraci�n de estrategias del peer
             const peerConfig = this.peerStrategies.get(peerId);
             const myConflictStrategy = this.conflictResolver.getCurrentStrategyName();
             const hasConflict = peerConfig && peerConfig.conflict !== myConflictStrategy;
@@ -1201,7 +1417,7 @@ class P2PNotesApp {
                         <div class="peer-strategy-item ${conflictMatch ? 'strategy-match' : 'strategy-mismatch'}">
                             <span class="strategy-label">Conflictos:</span>
                             <span class="strategy-value">${peerConfig.conflict}</span>
-                            ${conflictMatch ? '<span class="match-icon">✓</span>' : '<span class="mismatch-icon">⚠</span>'}
+                            ${conflictMatch ? '<span class="match-icon">?</span>' : '<span class="mismatch-icon">?</span>'}
                         </div>
                         <div class="peer-strategy-item">
                             <span class="strategy-label">Broadcasting:</span>
@@ -1220,7 +1436,7 @@ class P2PNotesApp {
                     </div>
                     <div class="peer-details">
                         <div class="peer-detail-row">
-                            <span class="detail-label">Conexión WebRTC:</span>
+                            <span class="detail-label">Conexi�n WebRTC:</span>
                             <span class="detail-value">${connectionState}</span>
                         </div>
                         <div class="peer-detail-row">
@@ -1236,10 +1452,10 @@ class P2PNotesApp {
                     ${hasConflict ? `
                         <div class="peer-actions">
                             <button class="btn btn-sm btn-warning" onclick="app.requestStrategyChange('${peerId}')">
-                                📤 Sugerir mi configuración
+                                ?? Sugerir mi configuraci�n
                             </button>
                             <button class="btn btn-sm btn-secondary" onclick="app.adoptPeerStrategy('${peerId}')">
-                                📥 Adoptar su configuración
+                                ?? Adoptar su configuraci�n
                             </button>
                         </div>
                     ` : ''}
@@ -1261,12 +1477,12 @@ class P2PNotesApp {
         );
         
         if (connectedPeers.length === 0) {
-            alert('No hay peers conectados para probar la sincronización');
+            alert('No hay peers conectados para probar la sincronizaci�n');
             return;
         }
         
         console.log('\n========================================');
-        console.log('🔄 PROBANDO SINCRONIZACIÓN CON PEERS');
+        console.log('?? PROBANDO SINCRONIZACI�N CON PEERS');
         console.log('========================================');
         console.log('Total de peers conectados:', connectedPeers.length);
         console.log('Total de notas locales:', this.notes.size);
@@ -1276,7 +1492,7 @@ class P2PNotesApp {
         
         connectedPeers.forEach(([peerId, peerData]) => {
             try {
-                console.log(`\n[SYNC TEST] Enviando sincronización a peer: ${peerId}`);
+                console.log(`\n[SYNC TEST] Enviando sincronizaci�n a peer: ${peerId}`);
                 this.syncAllNotesWithPeer(peerId);
                 syncCount++;
             } catch (error) {
@@ -1286,13 +1502,13 @@ class P2PNotesApp {
         });
         
         console.log('\n========================================');
-        console.log('✅ SINCRONIZACIÓN COMPLETADA');
+        console.log('? SINCRONIZACI�N COMPLETADA');
         console.log('========================================');
         console.log('Exitosas:', syncCount);
         console.log('Fallidas:', failCount);
         console.log('========================================\n');
         
-        alert(`Sincronización enviada a ${syncCount} peer(s)\nNotas compartidas: ${this.notes.size}`);
+        alert(`Sincronizaci�n enviada a ${syncCount} peer(s)\nNotas compartidas: ${this.notes.size}`);
     }
 
     updateConnectionStatus(connected) {
@@ -1341,29 +1557,29 @@ class P2PNotesApp {
         toast.className = `toast toast-${type}`;
         
         const icons = {
-            success: '✅',
-            error: '🗑️',
-            warning: '⚠️',
-            info: '📝'
+            success: '?',
+            error: '???',
+            warning: '??',
+            info: '??'
         };
 
         toast.innerHTML = `
-            <div class="toast-icon">${icons[type] || '📢'}</div>
+            <div class="toast-icon">${icons[type] || '??'}</div>
             <div class="toast-content">
                 <div class="toast-title">${this.escapeHtml(title)}</div>
                 <div class="toast-message">${this.escapeHtml(message)}</div>
             </div>
-            <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+            <button class="toast-close" onclick="this.parentElement.remove()">?</button>
         `;
 
         container.appendChild(toast);
 
-        // Animación de entrada
+        // Animaci�n de entrada
         setTimeout(() => {
             toast.classList.add('toast-show');
         }, 10);
 
-        // Auto-eliminar después de 4 segundos
+        // Auto-eliminar despu�s de 4 segundos
         setTimeout(() => {
             toast.classList.remove('toast-show');
             setTimeout(() => {
@@ -1374,85 +1590,85 @@ class P2PNotesApp {
         }, 4000);
     }
 
-    // PATRÓN STRATEGY: Métodos para cambiar estrategias dinámicamente
+    // PATR�N STRATEGY: M�todos para cambiar estrategias din�micamente
     
-    // Descripciones específicas de cada estrategia
+    // Descripciones espec�ficas de cada estrategia
     getStrategyDescriptions() {
         return {
             conflict: {
                 'last-write-wins': {
-                    title: '🔄 Estrategia: Last-Write-Wins',
-                    description: 'La última modificación siempre prevalece. Simple y rápida, pero puede sobrescribir cambios importantes. Ideal para colaboración casual.',
-                    info: 'La última modificación prevalece en caso de conflicto.'
+                    title: '?? Estrategia: Last-Write-Wins',
+                    description: 'La �ltima modificaci�n siempre prevalece. Simple y r�pida, pero puede sobrescribir cambios importantes. Ideal para colaboraci�n casual.',
+                    info: 'La �ltima modificaci�n prevalece en caso de conflicto.'
                 },
                 'first-write-wins': {
-                    title: '🔄 Estrategia: First-Write-Wins',
-                    description: 'La primera modificación se mantiene, los cambios posteriores se descartan. Protege datos originales pero puede ignorar actualizaciones importantes.',
-                    info: 'La primera modificación se conserva, las posteriores se rechazan.'
+                    title: '?? Estrategia: First-Write-Wins',
+                    description: 'La primera modificaci�n se mantiene, los cambios posteriores se descartan. Protege datos originales pero puede ignorar actualizaciones importantes.',
+                    info: 'La primera modificaci�n se conserva, las posteriores se rechazan.'
                 },
                 'version-based': {
-                    title: '🔄 Estrategia: Version-Based',
-                    description: 'Compara números de versión para decidir qué cambio mantener. Garantiza orden cronológico estricto. Útil para historial preciso.',
-                    info: 'Usa números de versión para determinar qué cambio es más reciente.'
+                    title: '?? Estrategia: Version-Based',
+                    description: 'Compara n�meros de versi�n para decidir qu� cambio mantener. Garantiza orden cronol�gico estricto. �til para historial preciso.',
+                    info: 'Usa n�meros de versi�n para determinar qu� cambio es m�s reciente.'
                 },
                 'content-merge': {
-                    title: '🔄 Estrategia: Content-Merge',
-                    description: 'Fusiona automáticamente el contenido de ambas versiones, combinando cambios cuando sea posible. Minimiza pérdida de datos pero puede crear duplicados.',
-                    info: 'Fusiona automáticamente el contenido de versiones conflictivas.'
+                    title: '?? Estrategia: Content-Merge',
+                    description: 'Fusiona autom�ticamente el contenido de ambas versiones, combinando cambios cuando sea posible. Minimiza p�rdida de datos pero puede crear duplicados.',
+                    info: 'Fusiona autom�ticamente el contenido de versiones conflictivas.'
                 },
                 'author-priority': {
-                    title: '🔄 Estrategia: Author-Priority',
-                    description: 'Prioriza cambios del nodo local sobre remotos. Da control total al usuario local. Recomendado cuando confías más en tus ediciones.',
+                    title: '?? Estrategia: Author-Priority',
+                    description: 'Prioriza cambios del nodo local sobre remotos. Da control total al usuario local. Recomendado cuando conf�as m�s en tus ediciones.',
                     info: 'Los cambios del autor local tienen prioridad sobre los remotos.'
                 }
             },
             storage: {
                 'local-storage': {
-                    title: '💾 Estrategia: LocalStorage',
+                    title: '?? Estrategia: LocalStorage',
                     description: 'Almacena datos persistentemente en el navegador (hasta 5-10MB). Los datos sobreviven al cerrar el navegador. Mejor para uso regular.',
                     info: 'Datos persistentes en el navegador.'
                 },
                 'session-storage': {
-                    title: '💾 Estrategia: SessionStorage',
-                    description: 'Datos temporales que se eliminan al cerrar la pestaña. Útil para sesiones únicas o datos sensibles que no deben guardarse permanentemente.',
-                    info: 'Datos temporales que se borran al cerrar la pestaña.'
+                    title: '?? Estrategia: SessionStorage',
+                    description: 'Datos temporales que se eliminan al cerrar la pesta�a. �til para sesiones �nicas o datos sensibles que no deben guardarse permanentemente.',
+                    info: 'Datos temporales que se borran al cerrar la pesta�a.'
                 },
                 'in-memory': {
-                    title: '💾 Estrategia: InMemory',
-                    description: 'Almacena todo en RAM. Máxima velocidad pero los datos se pierden al recargar. Ideal para pruebas o sesiones temporales de alta performance.',
-                    info: 'Solo en memoria RAM, se pierde al recargar la página.'
+                    title: '?? Estrategia: InMemory',
+                    description: 'Almacena todo en RAM. M�xima velocidad pero los datos se pierden al recargar. Ideal para pruebas o sesiones temporales de alta performance.',
+                    info: 'Solo en memoria RAM, se pierde al recargar la p�gina.'
                 },
                 'indexed-db': {
-                    title: '💾 Estrategia: IndexedDB',
-                    description: 'Base de datos del navegador con gran capacidad (GB). Permite almacenar grandes volúmenes de datos con búsquedas eficientes. Para aplicaciones complejas.',
+                    title: '?? Estrategia: IndexedDB',
+                    description: 'Base de datos del navegador con gran capacidad (GB). Permite almacenar grandes vol�menes de datos con b�squedas eficientes. Para aplicaciones complejas.',
                     info: 'Base de datos del navegador con gran capacidad de almacenamiento.'
                 }
             },
             broadcast: {
                 'broadcast-all': {
-                    title: '📡 Estrategia: Broadcast-All',
-                    description: 'Envía cada mensaje a todos los nodos conectados. Garantiza que todos reciban la información pero genera mucho tráfico de red.',
-                    info: 'Envío de mensajes a todos los nodos conectados.'
+                    title: '?? Estrategia: Broadcast-All',
+                    description: 'Env�a cada mensaje a todos los nodos conectados. Garantiza que todos reciban la informaci�n pero genera mucho tr�fico de red.',
+                    info: 'Env�o de mensajes a todos los nodos conectados.'
                 },
                 'selective': {
-                    title: '📡 Estrategia: Selective',
-                    description: 'Envía solo a nodos específicos según criterios definidos. Reduce tráfico de red pero requiere lógica de selección. Eficiente para redes grandes.',
-                    info: 'Envío selectivo basado en criterios específicos.'
+                    title: '?? Estrategia: Selective',
+                    description: 'Env�a solo a nodos espec�ficos seg�n criterios definidos. Reduce tr�fico de red pero requiere l�gica de selecci�n. Eficiente para redes grandes.',
+                    info: 'Env�o selectivo basado en criterios espec�ficos.'
                 },
                 'gossip': {
-                    title: '📡 Estrategia: Gossip Protocol',
-                    description: 'Propagación epidémica: cada nodo reenvía a un subconjunto aleatorio. Escalable y resistente a fallos, pero con latencia variable.',
-                    info: 'Propagación epidémica aleatoria entre nodos.'
+                    title: '?? Estrategia: Gossip Protocol',
+                    description: 'Propagaci�n epid�mica: cada nodo reenv�a a un subconjunto aleatorio. Escalable y resistente a fallos, pero con latencia variable.',
+                    info: 'Propagaci�n epid�mica aleatoria entre nodos.'
                 },
                 'priority': {
-                    title: '📡 Estrategia: Priority-Based',
-                    description: 'Envía primero a nodos de alta prioridad. Optimiza entrega crítica pero puede crear desigualdades. Útil para redes jerárquicas.',
-                    info: 'Envío basado en prioridad de los nodos.'
+                    title: '?? Estrategia: Priority-Based',
+                    description: 'Env�a primero a nodos de alta prioridad. Optimiza entrega cr�tica pero puede crear desigualdades. �til para redes jer�rquicas.',
+                    info: 'Env�o basado en prioridad de los nodos.'
                 },
                 'batch': {
-                    title: '📡 Estrategia: Batch',
-                    description: 'Agrupa múltiples mensajes antes de enviar. Reduce overhead de red y mejora eficiencia, pero aumenta latencia. Ideal para actualizaciones no críticas.',
-                    info: 'Agrupa mensajes en lotes para envío eficiente.'
+                    title: '?? Estrategia: Batch',
+                    description: 'Agrupa m�ltiples mensajes antes de enviar. Reduce overhead de red y mejora eficiencia, pero aumenta latencia. Ideal para actualizaciones no cr�ticas.',
+                    info: 'Agrupa mensajes en lotes para env�o eficiente.'
                 }
             }
         };
@@ -1469,22 +1685,22 @@ class P2PNotesApp {
         
         if (!strategyInfo) return;
         
-        // Configurar iconos según el tipo
+        // Configurar iconos seg�n el tipo
         const icons = {
-            conflict: '🔄',
-            storage: '💾',
-            broadcast: '📡'
+            conflict: '??',
+            storage: '??',
+            broadcast: '??'
         };
         
-        iconEl.textContent = icons[type] || '⚙️';
+        iconEl.textContent = icons[type] || '??';
         titleEl.textContent = strategyInfo.title;
         descriptionEl.textContent = strategyInfo.description;
         
-        // Mostrar notificación
+        // Mostrar notificaci�n
         notification.style.display = 'block';
         notification.classList.remove('hiding');
         
-        // Auto-ocultar después de 8 segundos
+        // Auto-ocultar despu�s de 8 segundos
         if (this.notificationTimeout) {
             clearTimeout(this.notificationTimeout);
         }
@@ -1514,7 +1730,7 @@ class P2PNotesApp {
         
         if (!strategyInfo) return;
         
-        // Actualizar la información en el panel
+        // Actualizar la informaci�n en el panel
         const infoElements = {
             conflict: 'conflictStrategyInfo',
             storage: 'storageStrategyInfo',
@@ -1625,7 +1841,7 @@ class P2PNotesApp {
         this.broadcastStrategyChange();
     }
 
-    // Notificar a todos los peers sobre cambio de configuración
+    // Notificar a todos los peers sobre cambio de configuraci�n
     broadcastStrategyChange() {
         const connectedPeers = Array.from(this.peers.entries()).filter(([_, p]) => 
             p.dataChannel && p.dataChannel.readyState === 'open'
@@ -1653,694 +1869,24 @@ class P2PNotesApp {
         const info = await this.storageManager.getStorageInfo();
         const stats = this.broadcastManager.getStats();
         
-        let message = `=== INFORMACIÓN DE ESTRATEGIAS ===\n\n`;
-        message += `🔄 Resolución de Conflictos: ${this.conflictResolver.getCurrentStrategyName()}\n\n`;
-        message += `💾 Almacenamiento: ${this.storageManager.getCurrentStrategyName()}\n`;
+        let message = `=== INFORMACI�N DE ESTRATEGIAS ===\n\n`;
+        message += `?? Resoluci�n de Conflictos: ${this.conflictResolver.getCurrentStrategyName()}\n\n`;
+        message += `?? Almacenamiento: ${this.storageManager.getCurrentStrategyName()}\n`;
         message += `   - Usado: ${info.usedFormatted || 'N/A'}\n`;
-        message += `   - Límite: ${info.limit}\n`;
-        message += `   - Persistente: ${info.persistent ? 'Sí' : 'No'}\n\n`;
-        message += `📡 Broadcasting: ${this.broadcastManager.getCurrentStrategyName()}\n`;
+        message += `   - L�mite: ${info.limit}\n`;
+        message += `   - Persistente: ${info.persistent ? 'S�' : 'No'}\n\n`;
+        message += `?? Broadcasting: ${this.broadcastManager.getCurrentStrategyName()}\n`;
         message += `   - Mensajes totales: ${stats.totalMessages}\n`;
         message += `   - Exitosos: ${stats.totalSent}\n`;
         message += `   - Fallidos: ${stats.totalFailed}\n`;
-        message += `   - Tasa de éxito: ${stats.successRate}\n`;
+        message += `   - Tasa de �xito: ${stats.successRate}\n`;
         
         alert(message);
     }
 
-    // ===== SISTEMA DE PRUEBAS =====
-    
-    showTestPanel() {
-        const panel = document.getElementById('testPanel');
-        if (panel) {
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        }
-    }
-
-    switchTestTab(tabName) {
-        // Ocultar todos los contenidos
-        document.querySelectorAll('.test-tab-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        
-        // Desactivar todos los tabs
-        document.querySelectorAll('.test-tab').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        
-        // Activar el tab seleccionado
-        document.getElementById('test-' + tabName).classList.add('active');
-        event.target.classList.add('active');
-    }
-
-    addTestResult(title, description, type, metrics = null) {
-        const resultsContent = document.getElementById('testResultsContent');
-        const noResults = resultsContent.querySelector('.no-results');
-        
-        if (noResults) {
-            resultsContent.innerHTML = '';
-        }
-        
-        const resultItem = document.createElement('div');
-        resultItem.className = `test-result-item ${type}`;
-        
-        let metricsHtml = '';
-        if (metrics) {
-            metricsHtml = '<div class="result-metrics">';
-            for (const [key, value] of Object.entries(metrics)) {
-                metricsHtml += `
-                    <div class="metric">
-                        <div class="metric-label">${key}</div>
-                        <div class="metric-value">${value}</div>
-                    </div>
-                `;
-            }
-            metricsHtml += '</div>';
-        }
-        
-        resultItem.innerHTML = `
-            <div class="result-header">
-                <div class="result-title">${title}</div>
-                <div class="result-time">${new Date().toLocaleTimeString()}</div>
-            </div>
-            <div class="result-description">${description}</div>
-            ${metricsHtml}
-        `;
-        
-        resultsContent.insertBefore(resultItem, resultsContent.firstChild);
-        
-        // Limitar a 10 resultados
-        while (resultsContent.children.length > 10) {
-            resultsContent.removeChild(resultsContent.lastChild);
-        }
-    }
-
-    // Pruebas de Resolución de Conflictos
-    runConflictTest(strategyName) {
-        console.log(`[TEST] Ejecutando prueba de conflicto: ${strategyName}`);
-        
-        // Guardar estrategia actual
-        const currentStrategy = this.conflictResolver.getCurrentStrategyName();
-        
-        // Cambiar a la estrategia a probar
-        this.setConflictStrategy(strategyName);
-        
-        // Crear notas de prueba con datos específicos
-        const testId = 'TEST-CONFLICT-' + Date.now();
-        const localNote = {
-            id: testId,
-            title: '🧪 [PRUEBA] Proyecto Final - Revisión Local',
-            content: 'Versión Local: Agregar sección de conclusiones y bibliografía. Revisar formato APA.',
-            timestamp: Date.now() - 5000,
-            version: 1,
-            origin: this.nodeId,
-            author: 'Usuario Local',
-            isTestNote: true,
-            testType: 'conflict'
-        };
-        
-        const remoteNote = {
-            id: testId,
-            title: '🧪 [PRUEBA] Proyecto Final - Actualización Remota',
-            content: 'Versión Remota: Incluir nuevos datos experimentales y gráficas comparativas. Actualizar referencias.',
-            timestamp: Date.now(),
-            version: 2,
-            origin: 'node_remote_test',
-            author: 'Usuario Remoto',
-            isTestNote: true,
-            testType: 'conflict'
-        };
-        
-        // Guardar nota local en el panel primero
-        this.notes.set(localNote.id, localNote);
-        this.renderNotes();
-        this.updateStats();
-        
-        // Simular un pequeño delay para visualizar la nota local
-        setTimeout(() => {
-            // Ejecutar resolución de conflicto
-            const startTime = performance.now();
-            const resolved = this.conflictResolver.resolve(localNote, remoteNote);
-            const endTime = performance.now();
-            
-            // Actualizar con la nota resuelta
-            this.notes.set(resolved.id, { ...resolved, isTestNote: true, testType: 'conflict' });
-            this.renderNotes();
-            this.updateStats();
-            
-            // Analizar resultado detalladamente
-            let winner = 'Fusionada';
-            let winnerReason = '';
-            
-            if (resolved.timestamp === localNote.timestamp && resolved.content === localNote.content) {
-                winner = '📍 Local';
-                winnerReason = 'La nota local (más antigua) fue seleccionada';
-            } else if (resolved.timestamp === remoteNote.timestamp && resolved.content === remoteNote.content) {
-                winner = '🌐 Remota';
-                winnerReason = 'La nota remota (más reciente) fue seleccionada';
-            } else if (resolved.content.includes(localNote.content) && resolved.content.includes(remoteNote.content)) {
-                winner = '🔀 Fusionada';
-                winnerReason = 'Ambas versiones fueron combinadas';
-            } else {
-                winner = '⚙️ Procesada';
-                winnerReason = 'Resultado procesado según lógica de la estrategia';
-            }
-            
-            // Calcular diferencias
-            const timeDiff = Math.abs(remoteNote.timestamp - localNote.timestamp);
-            const versionDiff = (remoteNote.version || 1) - (localNote.version || 1);
-            
-            const description = `
-                <div class="test-detail-section">
-                    <strong>📋 Estrategia Aplicada:</strong> ${this.conflictResolver.getCurrentStrategyName()}
-                    <br><br>
-                    <strong>📝 Nota Creada:</strong> "${resolved.title}"<br>
-                    <strong>🔍 Visualiza la nota en el panel principal</strong> (marcada con 🧪)<br>
-                    <br>
-                    <strong>🔍 Datos de Entrada:</strong>
-                    <table class="comparison-table">
-                        <tr>
-                            <th>Atributo</th>
-                            <th>Nota Local</th>
-                            <th>Nota Remota</th>
-                        </tr>
-                        <tr>
-                            <td><strong>Título</strong></td>
-                            <td>${localNote.title.replace('🧪 [PRUEBA] ', '')}</td>
-                            <td>${remoteNote.title.replace('🧪 [PRUEBA] ', '')}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Timestamp</strong></td>
-                            <td>${new Date(localNote.timestamp).toLocaleTimeString()} (hace 5s)</td>
-                            <td class="${winner.includes('Remota') ? 'winner' : ''}">${new Date(remoteNote.timestamp).toLocaleTimeString()} (ahora)</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Versión</strong></td>
-                            <td>v${localNote.version}</td>
-                            <td class="${winner.includes('Remota') ? 'winner' : ''}">v${remoteNote.version}</td>
-                        </tr>
-                    </table>
-                    <br>
-                    <strong>✅ Resultado de la Resolución:</strong><br>
-                    <div class="result-highlight">
-                        <strong>🏆 Ganador:</strong> ${winner}<br>
-                        <strong>📝 Razón:</strong> ${winnerReason}<br>
-                        <strong>📄 Título Final:</strong> "${resolved.title}"<br>
-                        <strong>⏰ Timestamp Final:</strong> ${new Date(resolved.timestamp).toLocaleTimeString()}<br>
-                        <strong>🔢 Versión Final:</strong> ${resolved.version || 'N/A'}<br>
-                        <strong>📊 Diferencia Temporal:</strong> ${(timeDiff / 1000).toFixed(1)}s<br>
-                        <strong>📈 Diferencia de Versión:</strong> ${versionDiff > 0 ? '+' : ''}${versionDiff}
-                    </div>
-                    <br>
-                    <strong>💡 Comportamiento Observado:</strong><br>
-                    ${this.getConflictTestInsight(strategyName, winner)}
-                    <br><br>
-                    <strong>🗑️ Puedes eliminar esta nota desde el panel principal o usar "Limpiar Notas de Prueba"</strong>
-                </div>
-            `;
-            
-            this.addTestResult(
-                `✅ Prueba de Conflicto: ${strategyName}`,
-                description,
-                'success',
-                {
-                    'Tiempo': `${(endTime - startTime).toFixed(3)}ms`,
-                    'Ganador': winner,
-                    'Versión Final': `v${resolved.version || '?'}`,
-                    'ID Nota': testId.substring(0, 20) + '...'
-                }
-            );
-        }, 500);
-    }
-
-    getConflictTestInsight(strategyName, winner) {
-        const insights = {
-            'last-write-wins': winner.includes('Remota') 
-                ? '✅ Correcto: La nota remota (más reciente) ganó como se esperaba. Esta estrategia prioriza la última modificación.' 
-                : '⚠️ La nota local ganó, lo cual es inusual para esta estrategia.',
-            'first-write-wins': winner.includes('Local') 
-                ? '✅ Correcto: La nota local (primera escritura) se preservó. Protege el dato original.' 
-                : '⚠️ La nota remota ganó, lo cual no es el comportamiento esperado.',
-            'version-based': resolved => resolved.version === 2 
-                ? '✅ Correcto: La versión más alta (v2) prevalece independientemente del timestamp.' 
-                : '✅ Decisión basada en número de versión.',
-            'content-merge': winner.includes('Fusionada') 
-                ? '✅ Correcto: Los contenidos se fusionaron. Ambas contribuciones se preservan.' 
-                : '✅ Contenido procesado según lógica de fusión.',
-            'author-priority': winner.includes('Local') 
-                ? '✅ Correcto: La prioridad del autor local se respetó. Control total del nodo local.' 
-                : '⚠️ La nota remota ganó, lo cual contradice esta estrategia.'
-        };
-        
-        return insights[strategyName] || '✅ Resolución completada según la estrategia configurada.';
-    }
-
-    runAllConflictTests() {
-        console.log('[TEST] Ejecutando todas las pruebas de conflicto');
-        
-        const strategies = [
-            'last-write-wins',
-            'first-write-wins',
-            'version-based',
-            'content-merge',
-            'author-priority'
-        ];
-        
-        let delay = 0;
-        strategies.forEach(strategy => {
-            setTimeout(() => {
-                this.runConflictTest(strategy);
-            }, delay);
-            delay += 300;
-        });
-        
-        this.addTestResult(
-            '🚀 Todas las Pruebas de Conflicto Iniciadas',
-            `Se ejecutarán ${strategies.length} pruebas en secuencia. Revisa los resultados abajo.`,
-            'success',
-            { 'Total': strategies.length }
-        );
-    }
-
-    // Pruebas de Almacenamiento
-    async runStorageTest(strategyName) {
-        console.log(`[TEST] Ejecutando prueba de almacenamiento: ${strategyName}`);
-        
-        // Cambiar a la estrategia a probar
-        this.setStorageStrategy(strategyName);
-        
-        // Crear datos de prueba realistas
-        const testNotes = [];
-        const noteTemplates = [
-            'Investigación sobre patrones de diseño',
-            'Lista de tareas del proyecto',
-            'Notas de la reunión',
-            'Ideas para la implementación',
-            'Problemas encontrados y soluciones'
-        ];
-        
-        for (let i = 0; i < 100; i++) {
-            testNotes.push({
-                id: `TEST-STORAGE-${strategyName}-${i}`,
-                title: `🧪 [PRUEBA] ${noteTemplates[i % noteTemplates.length]} #${i + 1}`,
-                content: `Contenido de prueba detallado para testing de almacenamiento.
-Esta nota contiene información sobre ${noteTemplates[i % noteTemplates.length]}.
-ID: ${i}, Estrategia: ${strategyName}, Timestamp: ${Date.now()}`,
-                timestamp: Date.now() - (i * 1000),
-                origin: this.nodeId,
-                version: Math.floor(i / 10) + 1,
-                isTestNote: true,
-                testType: 'storage'
-            });
-        }
-        
-        const dataSize = JSON.stringify(testNotes).length;
-        
-        // Agregar primeras 5 notas al panel principal para visualización
-        const notesToShow = testNotes.slice(0, 5);
-        notesToShow.forEach(note => {
-            this.notes.set(note.id, note);
-        });
-        this.renderNotes();
-        this.updateStats();
-        
-        // Medir escritura
-        const writeStart = performance.now();
-        await this.storageManager.save(testNotes);
-        const writeEnd = performance.now();
-        const writeTime = writeEnd - writeStart;
-        
-        // Medir lectura
-        const readStart = performance.now();
-        const loaded = await this.storageManager.load();
-        const readEnd = performance.now();
-        const readTime = readEnd - readStart;
-        
-        // Obtener info de almacenamiento
-        const info = await this.storageManager.getStorageInfo();
-        
-        // Calcular métricas
-        const writeSpeed = (dataSize / writeTime).toFixed(2); // bytes/ms
-        const readSpeed = (dataSize / readTime).toFixed(2);
-        const totalTime = writeTime + readTime;
-        const integrity = loaded.length === testNotes.length ? '✅ 100%' : `⚠️ ${((loaded.length / testNotes.length) * 100).toFixed(1)}%`;
-        
-        const description = `
-            <div class="test-detail-section">
-                <strong>💾 Estrategia Probada:</strong> ${this.storageManager.getCurrentStrategyName()}
-                <br><br>
-                <strong>� Notas Creadas:</strong> Se crearon ${testNotes.length} notas de prueba<br>
-                <strong>🔍 Visualiza las primeras 5 notas en el panel principal</strong> (marcadas con 🧪)<br>
-                <br>
-                <strong>�📊 Configuración de la Prueba:</strong><br>
-                • Notas a guardar: 100 unidades<br>
-                • Tamaño total de datos: ${(dataSize / 1024).toFixed(2)} KB (${dataSize} bytes)<br>
-                • Tamaño promedio por nota: ${(dataSize / testNotes.length).toFixed(0)} bytes<br>
-                <br>
-                <strong>⏱️ Métricas de Rendimiento:</strong>
-                <table class="comparison-table">
-                    <tr>
-                        <th>Operación</th>
-                        <th>Tiempo</th>
-                        <th>Velocidad</th>
-                    </tr>
-                    <tr class="${writeTime < 50 ? 'winner' : ''}">
-                        <td><strong>✍️ Escritura</strong></td>
-                        <td>${writeTime.toFixed(2)}ms</td>
-                        <td>${writeSpeed} bytes/ms</td>
-                    </tr>
-                    <tr class="${readTime < 30 ? 'winner' : ''}">
-                        <td><strong>📖 Lectura</strong></td>
-                        <td>${readTime.toFixed(2)}ms</td>
-                        <td>${readSpeed} bytes/ms</td>
-                    </tr>
-                    <tr>
-                        <td><strong>🔄 Total</strong></td>
-                        <td><strong>${totalTime.toFixed(2)}ms</strong></td>
-                        <td>-</td>
-                    </tr>
-                </table>
-                <br>
-                <strong>📦 Características del Almacenamiento:</strong>
-                <table class="comparison-table">
-                    <tr>
-                        <th>Propiedad</th>
-                        <th>Valor</th>
-                    </tr>
-                    <tr>
-                        <td>Persistencia</td>
-                        <td><strong>${info.persistent ? '✅ Permanente' : '❌ Temporal'}</strong></td>
-                    </tr>
-                    <tr>
-                        <td>Límite de capacidad</td>
-                        <td>${info.limit}</td>
-                    </tr>
-                    <tr>
-                        <td>Espacio usado</td>
-                        <td>${info.usedFormatted || 'N/A'}</td>
-                    </tr>
-                    <tr class="${loaded.length === testNotes.length ? 'winner' : ''}">
-                        <td>Integridad de datos</td>
-                        <td><strong>${integrity}</strong> (${loaded.length}/${testNotes.length})</td>
-                    </tr>
-                </table>
-                <br>
-                <strong>💡 Análisis de Resultados:</strong><br>
-                ${this.getStorageTestInsight(strategyName, writeTime, readTime, totalTime, info.persistent)}
-                <br><br>
-                <strong>🗑️ Usa "Limpiar Notas de Prueba" para eliminar las notas creadas</strong>
-            </div>
-        `;
-        
-        this.addTestResult(
-            `💾 Prueba de Almacenamiento: ${strategyName}`,
-            description,
-            loaded.length === testNotes.length ? 'success' : 'warning',
-            {
-                'Escritura': `${writeTime.toFixed(2)}ms`,
-                'Lectura': `${readTime.toFixed(2)}ms`,
-                'Total': `${totalTime.toFixed(2)}ms`,
-                'Integridad': integrity
-            }
-        );
-        
-        // Limpiar datos de prueba
-        await this.storageManager.clear();
-        this.loadNotesFromStorage();
-    }
-
-    getStorageTestInsight(strategyName, writeTime, readTime, totalTime, persistent) {
-        if (strategyName === 'local-storage') {
-            return `✅ LocalStorage mostró un rendimiento ${totalTime < 80 ? 'excelente' : 'aceptable'} (${totalTime.toFixed(0)}ms total). 
-                    Es ideal para aplicaciones web que necesitan persistencia sin configuración compleja. 
-                    ${persistent ? 'Los datos sobrevivirán al cierre del navegador.' : ''}`;
-        } else if (strategyName === 'session-storage') {
-            return `✅ SessionStorage tuvo un rendimiento ${totalTime < 80 ? 'excelente' : 'aceptable'} (${totalTime.toFixed(0)}ms total). 
-                    Perfecto para datos temporales de sesión. 
-                    ⚠️ Los datos se eliminarán al cerrar la pestaña.`;
-        } else if (strategyName === 'in-memory') {
-            return `⚡ InMemory fue ${writeTime < 20 ? 'extremadamente rápido' : 'muy rápido'} (${totalTime.toFixed(0)}ms total). 
-                    Rendimiento óptimo para operaciones frecuentes. 
-                    ❌ Los datos se pierden al recargar la página (solo RAM).`;
-        } else if (strategyName === 'indexed-db') {
-            return `✅ IndexedDB mostró ${totalTime < 150 ? 'buen' : 'rendimiento aceptable para'} rendimiento (${totalTime.toFixed(0)}ms total). 
-                    Soporta grandes volúmenes de datos (GB) y búsquedas complejas. 
-                    ${persistent ? 'Altamente recomendado para aplicaciones offline-first.' : ''}`;
-        }
-        return '✅ Prueba completada exitosamente.';
-    }
-
-    async runAllStorageTests() {
-        console.log('[TEST] Ejecutando todas las pruebas de almacenamiento');
-        
-        const strategies = [
-            'local-storage',
-            'session-storage',
-            'in-memory',
-            'indexed-db'
-        ];
-        
-        this.addTestResult(
-            '🚀 Comparativa de Almacenamiento Iniciada',
-            `Se ejecutarán ${strategies.length} pruebas. Cada una guardará y cargará 100 notas.`,
-            'success',
-            { 'Total': strategies.length }
-        );
-        
-        for (const strategy of strategies) {
-            await this.runStorageTest(strategy);
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-    }
-
-    // Pruebas de Broadcasting
-    runBroadcastTest(strategyName) {
-        console.log(`[TEST] Ejecutando prueba de broadcasting: ${strategyName}`);
-        
-        // Cambiar a la estrategia a probar
-        this.setBroadcastStrategy(strategyName);
-        
-        // Crear nota de prueba para visualizar
-        const testNote = {
-            id: 'TEST-BROADCAST-' + strategyName + '-' + Date.now(),
-            title: `🧪 [PRUEBA] Broadcasting con ${strategyName}`,
-            content: `Prueba de difusión de mensajes P2P usando la estrategia ${strategyName}.\n\nEsta nota simula la propagación de información a través de la red.\nSe envía a 10 peers con diferentes niveles de prioridad:\n- 2 Servidores (prioridad 9-10)\n- 2 VIP (prioridad 7-8)\n- 2 Premium (prioridad 5)\n- 2 Regular (prioridad 3)\n- 2 Basic (prioridad 1)`,
-            timestamp: Date.now(),
-            origin: this.nodeId,
-            isTestNote: true,
-            testType: 'broadcast'
-        };
-        
-        // Agregar nota al panel
-        this.notes.set(testNote.id, testNote);
-        this.renderNotes();
-        this.updateStats();
-        
-        // Crear peers simulados con características específicas
-        const mockPeers = [
-            { id: 'peer-server-main', priority: 10, type: 'server', send: () => Math.random() > 0.02 },
-            { id: 'peer-server-backup', priority: 9, type: 'server', send: () => Math.random() > 0.02 },
-            { id: 'peer-client-vip-1', priority: 8, type: 'vip', send: () => Math.random() > 0.03 },
-            { id: 'peer-client-vip-2', priority: 7, type: 'vip', send: () => Math.random() > 0.03 },
-            { id: 'peer-client-premium-1', priority: 5, type: 'premium', send: () => Math.random() > 0.05 },
-            { id: 'peer-client-premium-2', priority: 5, type: 'premium', send: () => Math.random() > 0.05 },
-            { id: 'peer-client-regular-1', priority: 3, type: 'regular', send: () => Math.random() > 0.05 },
-            { id: 'peer-client-regular-2', priority: 3, type: 'regular', send: () => Math.random() > 0.05 },
-            { id: 'peer-client-basic-1', priority: 1, type: 'basic', send: () => Math.random() > 0.08 },
-            { id: 'peer-client-basic-2', priority: 1, type: 'basic', send: () => Math.random() > 0.08 }
-        ];
-        
-        const message = {
-            type: 'note-update',
-            data: testNote,
-            timestamp: Date.now(),
-            priority: 'high'
-        };
-        
-        // Ejecutar broadcast
-        const startTime = performance.now();
-        const result = this.broadcastManager.broadcast(mockPeers, message);
-        const endTime = performance.now();
-        
-        const totalPeers = mockPeers.length;
-        const successRate = ((result.sent / totalPeers) * 100).toFixed(1);
-        const avgLatency = ((endTime - startTime) / result.sent).toFixed(3);
-        
-        // Determinar qué peers recibieron el mensaje (simulación)
-        const serversCount = mockPeers.filter(p => p.type === 'server').length;
-        const vipCount = mockPeers.filter(p => p.type === 'vip').length;
-        const premiumCount = mockPeers.filter(p => p.type === 'premium').length;
-        
-        const description = `
-            <div class="test-detail-section">
-                <strong>📡 Estrategia de Broadcasting:</strong> ${this.broadcastManager.getCurrentStrategyName()}
-                <br><br>
-                <strong>📝 Nota Creada:</strong> "${testNote.title}"<br>
-                <strong>🔍 Visualiza la nota en el panel principal</strong> (marcada con 🧪)<br>
-                <br>
-                <strong>🌐 Configuración de la Red:</strong><br>
-                • Total de peers: ${totalPeers} nodos<br>
-                • Servidores: ${serversCount} (prioridad 9-10)<br>
-                • Clientes VIP: ${vipCount} (prioridad 7-8)<br>
-                • Clientes Premium: ${premiumCount} (prioridad 5)<br>
-                • Clientes Regular: 2 (prioridad 3)<br>
-                • Clientes Basic: 2 (prioridad 1)<br>
-                <br>
-                <strong>📨 Mensaje Enviado:</strong><br>
-                • Tipo: ${message.type}<br>
-                • Prioridad: ${message.priority}<br>
-                • Tamaño: ${JSON.stringify(message).length} bytes<br>
-                <br>
-                <strong>📊 Resultados de la Transmisión:</strong>
-                <table class="comparison-table">
-                    <tr>
-                        <th>Métrica</th>
-                        <th>Valor</th>
-                        <th>Evaluación</th>
-                    </tr>
-                    <tr class="${result.sent === totalPeers ? 'winner' : ''}">
-                        <td>Mensajes enviados</td>
-                        <td><strong>${result.sent}/${totalPeers}</strong></td>
-                        <td>${result.sent === totalPeers ? '✅ Completo' : result.sent >= totalPeers * 0.8 ? '✅ Bueno' : '⚠️ Parcial'}</td>
-                    </tr>
-                    <tr>
-                        <td>Mensajes fallidos</td>
-                        <td>${result.failed}</td>
-                        <td>${result.failed === 0 ? '✅ Sin fallos' : '⚠️ Algunos fallos'}</td>
-                    </tr>
-                    <tr class="${successRate >= 90 ? 'winner' : ''}">
-                        <td>Tasa de éxito</td>
-                        <td><strong>${successRate}%</strong></td>
-                        <td>${successRate >= 95 ? '🌟 Excelente' : successRate >= 80 ? '✅ Bueno' : '⚠️ Regular'}</td>
-                    </tr>
-                    <tr class="${(endTime - startTime) < 5 ? 'winner' : ''}">
-                        <td>Latencia total</td>
-                        <td>${(endTime - startTime).toFixed(3)}ms</td>
-                        <td>${(endTime - startTime) < 2 ? '⚡ Muy rápido' : (endTime - startTime) < 5 ? '✅ Rápido' : '⚠️ Moderado'}</td>
-                    </tr>
-                    <tr>
-                        <td>Latencia promedio</td>
-                        <td>${avgLatency}ms/peer</td>
-                        <td>-</td>
-                    </tr>
-                </table>
-                <br>
-                <strong>📈 Eficiencia de la Estrategia:</strong><br>
-                • Ancho de banda usado: ${result.sent} transmisiones<br>
-                • Ahorro vs Broadcast-All: ${totalPeers - result.sent} mensajes (${(((totalPeers - result.sent) / totalPeers) * 100).toFixed(1)}%)<br>
-                • Overhead de protocolo: ${(result.sent * 40).toFixed(0)} bytes (aprox.)<br>
-                <br>
-                <strong>💡 Análisis de la Estrategia:</strong><br>
-                ${this.getBroadcastTestInsight(strategyName, result.sent, totalPeers, successRate, endTime - startTime)}
-                <br><br>
-                <strong>🗑️ Usa "Limpiar Notas de Prueba" para eliminar las notas creadas</strong>
-            </div>
-        `;
-        
-        this.addTestResult(
-            `📡 Prueba de Broadcasting: ${strategyName}`,
-            description,
-            successRate >= 80 ? 'success' : 'warning',
-            {
-                'Latencia': `${(endTime - startTime).toFixed(3)}ms`,
-                'Enviados': `${result.sent}/${totalPeers}`,
-                'Éxito': `${successRate}%`,
-                'Eficiencia': `${(((totalPeers - result.sent) / totalPeers) * 100).toFixed(0)}%`
-            }
-        );
-    }
-
-    getBroadcastTestInsight(strategyName, sent, total, successRate, latency) {
-        const efficiency = ((total - sent) / total) * 100;
-        
-        if (strategyName === 'broadcast-all') {
-            return `✅ Broadcast-All envió a todos los peers (${sent}/${total}). 
-                    Garantiza entrega completa pero ${efficiency === 0 ? 'sin optimización de ancho de banda' : ''}. 
-                    Ideal para redes pequeñas (< 20 nodos) o mensajes críticos.`;
-        } else if (strategyName === 'selective') {
-            return `✅ Selective envió solo a ${sent} peers seleccionados (${efficiency.toFixed(0)}% de ahorro). 
-                    Reduce tráfico innecesario mediante filtros. 
-                    ${successRate >= 90 ? 'Excelente para segmentación de red.' : 'Útil para mensajes específicos.'}`;
-        } else if (strategyName === 'gossip') {
-            return `✅ Gossip Protocol propagó a ${sent} peers en esta ronda. 
-                    La propagación continúa exponencialmente en rondas subsecuentes. 
-                    Convergencia eventual garantizada. Ideal para redes masivas (1000+ nodos).`;
-        } else if (strategyName === 'priority') {
-            return `✅ Priority-Based respetó el orden de prioridad (servidores primero). 
-                    Latencia escalonada: ${latency.toFixed(1)}ms total. 
-                    Perfecto para arquitecturas jerárquicas y CDN.`;
-        } else if (strategyName === 'batch') {
-            return `✅ Batch agrupó mensajes reduciendo overhead de red. 
-                    ${efficiency > 0 ? `Ahorro de ${efficiency.toFixed(0)}% en transmisiones.` : ''} 
-                    Trade-off: Mayor latencia (${latency.toFixed(1)}ms) a cambio de eficiencia.`;
-        }
-        return '✅ Prueba completada exitosamente.';
-    }
-
-    runAllBroadcastTests() {
-        console.log('[TEST] Ejecutando todas las pruebas de broadcasting');
-        
-        const strategies = [
-            'broadcast-all',
-            'selective',
-            'gossip',
-            'priority',
-            'batch'
-        ];
-        
-        let delay = 0;
-        strategies.forEach(strategy => {
-            setTimeout(() => {
-                this.runBroadcastTest(strategy);
-            }, delay);
-            delay += 300;
-        });
-        
-        this.addTestResult(
-            '🚀 Todas las Pruebas de Broadcasting Iniciadas',
-            `Se ejecutarán ${strategies.length} pruebas con 10 peers simulados cada una.`,
-            'success',
-            { 'Total': strategies.length }
-        );
-    }
-
-    // Limpiar notas de prueba
-    clearTestNotes() {
-        let testNotesCount = 0;
-        
-        // Filtrar y eliminar notas de prueba
-        this.notes.forEach((note, id) => {
-            if (note.isTestNote === true) {
-                this.notes.delete(id);
-                testNotesCount++;
-            }
-        });
-        
-        // Guardar cambios y actualizar interfaz
-        this.saveNotesToStorage();
-        this.renderNotes();
-        this.updateStats();
-        
-        // Mostrar confirmación
-        this.addTestResult(
-            '🗑️ Notas de Prueba Eliminadas',
-            `Se eliminaron ${testNotesCount} nota(s) de prueba del panel de notas.`,
-            testNotesCount > 0 ? 'success' : 'info',
-            { 'Eliminadas': testNotesCount }
-        );
-        
-        console.log(`[TEST] ${testNotesCount} notas de prueba eliminadas`);
-    }
-
-    // Limpiar resultados de pruebas
-    clearTestResults() {
-        const resultsContent = document.getElementById('testResultsContent');
-        resultsContent.innerHTML = '<div class="no-results">No hay resultados de pruebas disponibles</div>';
-        console.log('[TEST] Resultados de pruebas limpiados');
-    }
 }
 
-// Variable global para la aplicación
+// Variable global para la aplicaci�n
 let app;
 
 document.addEventListener('DOMContentLoaded', () => {
